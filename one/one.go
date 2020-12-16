@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -70,7 +71,7 @@ func (c *client) inProgressSellOrders() []*purchase.Purchase {
 
 func (c *client) run(t time.Time) {
 	if err := c.updateOrders(); err != nil {
-		fmt.Printf("updateOrders @ %v: %v\n", t, err)
+		log.Printf("updateOrders @ %v: %v\n", t, err)
 		return
 	}
 	c.buy(t)
@@ -105,7 +106,7 @@ func (c *client) sell(t time.Time) {
 	}
 	q, err := c.alpacaClient.GetLastQuote(c.stockSymbol)
 	if err != nil {
-		fmt.Printf("unable to get last quote @ %v: %v\n", t, err)
+		log.Printf("unable to get last quote @ %v: %v\n", t, err)
 		return
 	}
 	for _, p := range boughtNotSold {
@@ -127,10 +128,10 @@ func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
 		TimeInForce: alpaca.Day,
 	})
 	if err != nil {
-		fmt.Printf("unable to place sell order @ %v: %v\n", t, err)
+		log.Printf("unable to place sell order @ %v: %v\n", t, err)
 		return
 	}
-	fmt.Printf("sell order placed @ %v:\n%+v\n", t, p.SellOrder)
+	log.Printf("sell order placed @ %v:\n%+v\n", t, p.SellOrder)
 }
 
 // Buy side:
@@ -138,7 +139,7 @@ func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
 // If positive direction, buy.
 func (c *client) buy(t time.Time) {
 	if len(c.boughtNotSold()) >= c.allowedPurchases {
-		fmt.Printf("allowable purchases used @ %v\n", t)
+		log.Printf("allowable purchases used @ %v\n", t)
 		return
 	}
 	if !c.buyEvent(t) {
@@ -159,15 +160,15 @@ func (c *client) buyEvent(t time.Time) bool {
 		Limit:     &limit,
 	})
 	if err != nil {
-		fmt.Printf("GetSymbolBars err @ %v: %v\n", t, err)
+		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
 		return false
 	}
 	if len(bars) < 2 {
-		fmt.Printf("did not return at least two bars, so cannot proceed @ %v\n", t)
+		log.Printf("did not return at least two bars, so cannot proceed @ %v\n", t)
 		return false
 	}
 	if bars[len(bars)-1].Close <= bars[len(bars)-2].Close {
-		fmt.Printf("non-positive improvement of $%v => $%v @ %v\n",
+		log.Printf("non-positive improvement of $%v => $%v @ %v\n",
 			bars[len(bars)-2].Close, bars[len(bars)-1].Close, t)
 		return false
 	}
@@ -185,22 +186,22 @@ func (c *client) placeBuyOrder(t time.Time) {
 		ClientOrderID: fmt.Sprintf("one:%v", t),
 	})
 	if err != nil {
-		fmt.Printf("unable to place buy order @ %v: %v\n", t, err)
+		log.Printf("unable to place buy order @ %v: %v\n", t, err)
 		return
 	}
 	c.purchases = append(c.purchases, &purchase.Purchase{
 		BuyOrder: o,
 	})
-	fmt.Printf("buy order placed @ %v:\n%+v\n", t, o)
+	log.Printf("buy order placed @ %v:\n%+v\n", t, o)
 }
 
 // close closes out all trading for the day.
 func (c *client) close() {
 	if err := c.alpacaClient.CancelAllOrders(); err != nil {
-		fmt.Printf("unable to cancel all orders: %v\n", err)
+		log.Printf("unable to cancel all orders: %v\n", err)
 	}
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
-		fmt.Printf("unable to close all positions: %v\n", err)
+		log.Printf("unable to close all positions: %v\n", err)
 	}
 	fmt.Println("My hour of trading is over!")
 }
@@ -219,7 +220,7 @@ func main() {
 		done <- true
 	}()
 	for {
-		fmt.Printf("another 30 seconds...\n")
+		log.Printf("another 30 seconds...\n")
 		select {
 		case <-done:
 			c.close()
@@ -234,7 +235,7 @@ func init() {
 	os.Setenv(common.EnvApiKeyID, "PKMYQANTSQ1QRQW9FSO6")
 	os.Setenv(common.EnvApiSecretKey, "d5T9VG79siGgofz8snYZDX85wLnVQHtPDQfvRMET")
 
-	fmt.Printf("Running w/ credentials [%v %v]\n", common.Credentials().ID, common.Credentials().Secret)
+	log.Printf("Running w/ credentials [%v %v]\n", common.Credentials().ID, common.Credentials().Secret)
 
 	alpaca.SetBaseUrl("https://paper-api.alpaca.markets")
 }
