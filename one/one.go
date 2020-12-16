@@ -203,7 +203,7 @@ func (c *client) close() {
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
-	fmt.Println("My hour of trading is over!")
+	log.Printf("My hour of trading is over!")
 }
 
 func main() {
