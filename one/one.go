@@ -6,10 +6,9 @@ import (
 	"os"
 	"time"
 
-	"trader/purchase"
-
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
+	"github.com/ejbrever/trader/purchase"
 	"github.com/shopspring/decimal"
 )
 
