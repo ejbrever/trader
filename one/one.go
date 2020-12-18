@@ -33,71 +33,6 @@ const (
 	timeBeforeMarketCloseToSell = 1*time.Hour
 )
 
-// Purchase stores information related to a purchase.
-type Purchase struct {
-	BuyOrder  *alpaca.Order
-	SellOrder *alpaca.Order
-}
-
-// BuyFilledAvgPriceFloat returns the average fill price of a buy event.
-func (p *Purchase) BuyFilledAvgPriceFloat() float32 {
-	f, _ := p.BuyOrder.FilledAvgPrice.Float64()
-	return float32(f)
-}
-
-// SoldFilledAvgPriceFloat returns the average fill price of a sell event.
-func (p *Purchase) SoldFilledAvgPriceFloat() float32 {
-	f, _ := p.SellOrder.FilledAvgPrice.Float64()
-	return float32(f)
-}
-
-// InProgressBuyOrder determines if the buy order is still open and in progress.
-func (p *Purchase) InProgressBuyOrder() bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	if p.BuyOrder.FilledAt != nil {
-		return false
-	}
-	if p.BuyOrder.ExpiredAt != nil {
-		return false
-	}
-	if p.BuyOrder.CanceledAt != nil {
-		return false
-	}
-	if p.BuyOrder.FailedAt != nil {
-		return false
-	}
-	if p.BuyOrder.ReplacedAt != nil {
-		return false
-	}
-	return true
-}
-
-// InProgressSellOrder determines if the sell order is still open and
-// in progress.
-func (p *Purchase) InProgressSellOrder() bool {
-	if p.SellOrder == nil {
-		return false
-	}
-	if p.SellOrder.FilledAt != nil {
-		return false
-	}
-	if p.SellOrder.ExpiredAt != nil {
-		return false
-	}
-	if p.SellOrder.CanceledAt != nil {
-		return false
-	}
-	if p.SellOrder.FailedAt != nil {
-		return false
-	}
-	if p.SellOrder.ReplacedAt != nil {
-		return false
-	}
-	return true
-}
-
 type client struct {
 	stockSymbol      string
 	allowedPurchases int
@@ -280,8 +215,8 @@ func (c *client) placeBuyOrder(t time.Time) {
 	log.Printf("buy order placed @ %v:\n%+v\n", t, o)
 }
 
-// close closes out all trading for the day.
-func (c *client) close() {
+// closeOutTrading closes out all trading for the day.
+func (c *client) closeOutTrading() {
 	if err := c.alpacaClient.CancelAllOrders(); err != nil {
 		log.Printf("unable to cancel all orders: %v\n", err)
 	}
@@ -304,7 +239,7 @@ func main() {
 	for {
 		select {
 		case <-done:
-			c.close()
+			c.closeOutTrading()
 			return
 		case t := <-ticker.C:
 			clock, err := c.alpacaClient.GetClock()
@@ -315,7 +250,8 @@ func main() {
 			switch {
 			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
 				log.Printf("market is closing soon")
-				done <- true
+				c.closeOutTrading()
+				time.Sleep(timeBeforeMarketCloseToSell)
 				continue
 			case !clock.IsOpen:
 				log.Printf("market is not open :(")
