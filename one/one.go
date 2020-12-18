@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
+
 
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
@@ -32,6 +34,71 @@ const (
 	// that all positions should be closed out.
 	timeBeforeMarketCloseToSell = 1*time.Hour
 )
+
+// Purchase stores information related to a purchase.
+type Purchase struct {
+	BuyOrder  *alpaca.Order
+	SellOrder *alpaca.Order
+}
+
+// BuyFilledAvgPriceFloat returns the average fill price of a buy event.
+func (p *Purchase) BuyFilledAvgPriceFloat() float32 {
+	f, _ := p.BuyOrder.FilledAvgPrice.Float64()
+	return float32(f)
+}
+
+// SoldFilledAvgPriceFloat returns the average fill price of a sell event.
+func (p *Purchase) SoldFilledAvgPriceFloat() float32 {
+	f, _ := p.SellOrder.FilledAvgPrice.Float64()
+	return float32(f)
+}
+
+// InProgressBuyOrder determines if the buy order is still open and in progress.
+func (p *Purchase) InProgressBuyOrder() bool {
+	if p.BuyOrder == nil {
+		return false
+	}
+	if p.BuyOrder.FilledAt != nil {
+		return false
+	}
+	if p.BuyOrder.ExpiredAt != nil {
+		return false
+	}
+	if p.BuyOrder.CanceledAt != nil {
+		return false
+	}
+	if p.BuyOrder.FailedAt != nil {
+		return false
+	}
+	if p.BuyOrder.ReplacedAt != nil {
+		return false
+	}
+	return true
+}
+
+// InProgressSellOrder determines if the sell order is still open and
+// in progress.
+func (p *Purchase) InProgressSellOrder() bool {
+	if p.SellOrder == nil {
+		return false
+	}
+	if p.SellOrder.FilledAt != nil {
+		return false
+	}
+	if p.SellOrder.ExpiredAt != nil {
+		return false
+	}
+	if p.SellOrder.CanceledAt != nil {
+		return false
+	}
+	if p.SellOrder.FailedAt != nil {
+		return false
+	}
+	if p.SellOrder.ReplacedAt != nil {
+		return false
+	}
+	return true
+}
 
 type client struct {
 	stockSymbol      string
@@ -226,7 +293,31 @@ func (c *client) closeOutTrading() {
 	log.Printf("My hour of trading is over!")
 }
 
+// startServer starts a web server to handle health checks.
+func startServer() {
+  fmt.Printf("HERE1")
+  http.HandleFunc("/", handler)
+
+  port := os.Getenv("PORT")
+  if port == "" {
+    port = "8080"
+    log.Printf("defaulting to port %s", port)
+  }
+
+  log.Printf("listening on port %s", port)
+  fmt.Printf("HERE2")
+  if err := http.ListenAndServe(":"+port, nil); err != nil {
+    log.Fatal(err)
+  }
+}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+  fmt.Fprintf(w, "Trader One Is Live!\n")
+}
+
 func main() {
+  startServer()
+
 	c := new(stockSymbol, maxAllowedPurchases)
 
 	ticker := time.NewTicker(timeBetweenAction)
