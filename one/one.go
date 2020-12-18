@@ -12,6 +12,27 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const (
+	// purchaseQty is the quantity of shares to purchase with each buy order.
+	purchaseQty = 10
+
+	// timeToTrade is the time that the service should continue trying to trade.
+	timeToTrade = 1000 * time.Hour
+
+	// timeBetweenAction is the time between each attempt to buy or sell.
+	timeBetweenAction = 30 * time.Second
+
+	// stockSymbol is the stock to buy an sell.
+	stockSymbol = "SPY"
+
+	// maxAllowedPurchases is the maximum number of allowed purchases.
+	maxAllowedPurchases = 20
+
+	// timeBeforeMarketCloseToSell is the duration of time before market close
+	// that all positions should be closed out.
+	timeBeforeMarketCloseToSell = 1*time.Hour
+)
+
 type client struct {
 	stockSymbol      string
 	allowedPurchases int
@@ -121,7 +142,7 @@ func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
 	p.SellOrder, err = c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
 		AccountID:   "",
 		AssetKey:    &c.stockSymbol,
-		Qty:         decimal.NewFromFloat(1),
+		Qty:         decimal.NewFromFloat(purchaseQty),
 		Side:        alpaca.Sell,
 		Type:        alpaca.Market,
 		TimeInForce: alpaca.Day,
@@ -178,7 +199,7 @@ func (c *client) placeBuyOrder(t time.Time) {
 	o, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
 		AccountID:     "",
 		AssetKey:      &c.stockSymbol,
-		Qty:           decimal.NewFromFloat(1),
+		Qty:           decimal.NewFromFloat(purchaseQty),
 		Side:          alpaca.Buy,
 		Type:          alpaca.Market,
 		TimeInForce:   alpaca.Day,
@@ -206,25 +227,37 @@ func (c *client) close() {
 }
 
 func main() {
-	stockSymbol := "SPY"
-	allowedPurchases := 20
+	c := new(stockSymbol, maxAllowedPurchases)
 
-	c := new(stockSymbol, allowedPurchases)
-
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(timeBetweenAction)
 	defer ticker.Stop()
 	done := make(chan bool)
 	go func() {
-		time.Sleep(20 * time.Minute)
+		time.Sleep(timeToTrade)
 		done <- true
 	}()
 	for {
-		log.Printf("another 30 seconds...\n")
 		select {
 		case <-done:
 			c.close()
 			return
 		case t := <-ticker.C:
+			clock, err := c.alpacaClient.GetClock()
+			if err != nil {
+				log.Printf("error checking if market is open: %v", err)
+				continue
+			}
+			switch {
+			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
+				log.Printf("market is closing soon")
+				done <- true
+				continue
+			case !clock.IsOpen:
+				log.Printf("market is not open :(")
+				continue
+			default:
+				log.Printf("market is open!")
+			}
 			go c.run(t)
 		}
 	}
