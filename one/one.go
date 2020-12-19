@@ -293,9 +293,17 @@ func (c *client) closeOutTrading() {
 	log.Printf("My hour of trading is over!")
 }
 
+type webserver struct {
+	alpacaClient *alpaca.Client
+}
+
 // startServer starts a web server to handle health checks.
-func startServer() {
-	http.HandleFunc("/", handler)
+func startServer(alpacaClient *alpaca.Client) {
+	w := &webserver{
+		alpacaClient: alpacaClient,
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/", w)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -304,13 +312,35 @@ func startServer() {
 	}
 
 	log.Printf("listening on port %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func handler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Trader One Is Live!\n")
+func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Trader One Is Live!\n\n")
+
+	a, err := ws.alpacaClient.GetAccount()
+	if err != nil {
+		fmt.Fprintf(w, "unable to get account info: %v", err)
+		return
+	}
+	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.String())
+	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.String())
+
+	positions, err := ws.alpacaClient.ListPositions()
+	if err != nil {
+		fmt.Fprintf(w, "unable to get account positions: %v", err)
+		return
+	}
+	fmt.Fprintf(w, "\n\nPositions\n")
+	for _, p := range positions {
+		fmt.Fprintf(w, "\nSymbol: %v\n", p.Symbol)
+		fmt.Fprintf(w, "Qty: %v\n", p.Qty)
+		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.String())
+		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.String())
+		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.String())
+	}
 }
 
 func setupLogging() *os.File {
@@ -322,13 +352,18 @@ func setupLogging() *os.File {
 	return f
 }
 
+func closeLogging(f *os.File) {
+	log.Printf("shutting down")
+	f.Close()
+}
+
 func main() {
 	f := setupLogging()
-	defer f.Close()
-
-	go startServer()
+	defer closeLogging(f)
 
 	c := new(stockSymbol, maxAllowedPurchases)
+
+	go startServer(c.alpacaClient)
 
 	ticker := time.NewTicker(timeBetweenAction)
 	defer ticker.Stop()
