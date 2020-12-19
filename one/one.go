@@ -295,22 +295,22 @@ func (c *client) closeOutTrading() {
 
 // startServer starts a web server to handle health checks.
 func startServer() {
-  http.HandleFunc("/", handler)
+	http.HandleFunc("/", handler)
 
-  port := os.Getenv("PORT")
-  if port == "" {
-    port = "8080"
-    log.Printf("defaulting to port %s", port)
-  }
+	port := os.Getenv("PORT")
+	if port == "" {
+	  port = "8080"
+	  log.Printf("defaulting to port %s", port)
+	}
 
-  log.Printf("listening on port %s", port)
-  if err := http.ListenAndServe(":"+port, nil); err != nil {
-    log.Fatal(err)
-  }
+	log.Printf("listening on port %s", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	  log.Fatal(err)
+	}
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
-  fmt.Fprintf(w, "Trader One Is Live!\n")
+	fmt.Fprintf(w, "Trader One Is Live!\n")
 }
 
 func setupLogging() *os.File {
