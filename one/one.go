@@ -299,13 +299,13 @@ func startServer() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-	  port = "8080"
-	  log.Printf("defaulting to port %s", port)
+		port = "8080"
+		log.Printf("defaulting to port %s", port)
 	}
 
 	log.Printf("listening on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-	  log.Fatal(err)
+		log.Fatal(err)
 	}
 }
 
@@ -316,7 +316,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func setupLogging() *os.File {
 	f, err := os.OpenFile("trader-one-logs", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	if err != nil {
-	    log.Fatalf("error opening file: %v", err)
+		log.Fatalf("error opening file: %v", err)
 	}
 	log.SetOutput(f)
 	return f
