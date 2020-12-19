@@ -295,7 +295,6 @@ func (c *client) closeOutTrading() {
 
 // startServer starts a web server to handle health checks.
 func startServer() {
-  fmt.Printf("HERE1")
   http.HandleFunc("/", handler)
 
   port := os.Getenv("PORT")
@@ -305,7 +304,6 @@ func startServer() {
   }
 
   log.Printf("listening on port %s", port)
-  fmt.Printf("HERE2")
   if err := http.ListenAndServe(":"+port, nil); err != nil {
     log.Fatal(err)
   }
@@ -315,8 +313,20 @@ func handler(w http.ResponseWriter, r *http.Request) {
   fmt.Fprintf(w, "Trader One Is Live!\n")
 }
 
+func setupLogging() *os.File {
+	f, err := os.OpenFile("trader-one-logs", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	if err != nil {
+	    log.Fatalf("error opening file: %v", err)
+	}
+	log.SetOutput(f)
+	return f
+}
+
 func main() {
-  startServer()
+	f := setupLogging()
+	defer f.Close()
+
+	go startServer()
 
 	c := new(stockSymbol, maxAllowedPurchases)
 
