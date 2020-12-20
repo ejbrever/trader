@@ -370,13 +370,24 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "unable to get account positions: %v", err)
 		return
 	}
-	fmt.Fprintf(w, "\n\nPositions\n")
+	fmt.Fprintf(w, "\n\nCurrent Positions\n")
 	for _, p := range positions {
 		fmt.Fprintf(w, "\nSymbol: %v\n", p.Symbol)
 		fmt.Fprintf(w, "Qty: %v\n", p.Qty)
 		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.String())
 		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.String())
 		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.String())
+	}
+
+	activities, err := ws.alpacaClient.GetAccountActivities(nil, nil)
+	if err != nil {
+		fmt.Fprintf(w, "unable to get account activities: %v", err)
+		return
+	}
+	fmt.Fprintf(w, "\n\nRecent Activity\n")
+	for _, a := range activities {
+		fmt.Fprintf(w, "\n%v: [%v] %v, %v @ $%v\n",
+			a.TransactionTime, a.Side, a.Symbol, a.Qty, a.Price)
 	}
 }
 
@@ -399,6 +410,7 @@ func main() {
 	defer closeLogging(f)
 
 	c := new(stockSymbol, maxAllowedPurchases)
+	log.Printf("trader one is now online!")
 
 	go startServer(c.alpacaClient)
 
