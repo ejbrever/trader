@@ -42,15 +42,15 @@ type Purchase struct {
 }
 
 // BuyFilledAvgPriceFloat returns the average fill price of a buy event.
-func (p *Purchase) BuyFilledAvgPriceFloat() float32 {
+func (p *Purchase) BuyFilledAvgPriceFloat() float64 {
 	f, _ := p.BuyOrder.FilledAvgPrice.Float64()
-	return float32(f)
+	return f
 }
 
 // SoldFilledAvgPriceFloat returns the average fill price of a sell event.
-func (p *Purchase) SoldFilledAvgPriceFloat() float32 {
+func (p *Purchase) SoldFilledAvgPriceFloat() float64 {
 	f, _ := p.SellOrder.FilledAvgPrice.Float64()
-	return float32(f)
+	return f
 }
 
 // InProgressBuyOrder determines if the buy order is still open and in progress.
@@ -161,8 +161,22 @@ func (c *client) run(t time.Time) {
 		log.Printf("updateOrders @ %v: %v\n", t, err)
 		return
 	}
+	c.cancelOutdatedOrders()
 	c.buy(t)
 	c.sell(t)
+}
+
+// cancelOutdatedOrders cancels all buy orders that have been outstanding for
+// more than 5 mins.
+func (c *client) cancelOutdatedOrders() {
+	now := time.Now()
+	for _, o := range c.inProgressBuyOrders() {
+		if now.Sub(o.BuyOrder.CreatedAt) > 5 * time.Minute {
+			if err := c.alpacaClient.CancelOrder(o.BuyOrder.ID); err != nil {
+				log.Printf("unable to cancel %q: %v", o.BuyOrder.ID, err)
+			}
+		}
+	}
 }
 
 func (c *client) updateOrders() error {
@@ -191,34 +205,45 @@ func (c *client) sell(t time.Time) {
 	if len(boughtNotSold) == 0 {
 		return
 	}
-	q, err := c.alpacaClient.GetLastQuote(c.stockSymbol)
-	if err != nil {
-		log.Printf("unable to get last quote @ %v: %v\n", t, err)
-		return
-	}
 	for _, p := range boughtNotSold {
-		if p.BuyFilledAvgPriceFloat() <= q.Last.AskPrice {
-			continue
-		}
 		c.placeSellOrder(t, p)
 	}
 }
 
 func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
-	var err error
-	p.SellOrder, err = c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
-		AccountID:   "",
-		AssetKey:    &c.stockSymbol,
-		Qty:         decimal.NewFromFloat(purchaseQty),
-		Side:        alpaca.Sell,
-		Type:        alpaca.Market,
-		TimeInForce: alpaca.Day,
-	})
-	if err != nil {
-		log.Printf("unable to place sell order @ %v: %v\n", t, err)
+	basePrice := float64(p.BuyFilledAvgPriceFloat())
+	if basePrice == 0 {
+		log.Printf("filledAvgPrice cannot be 0 for order @ %v:\n%+v", t, p.BuyOrder)
 		return
 	}
-	log.Printf("sell order placed @ %v:\n%+v\n", t, p.SellOrder)
+	// Take a profit as soon as 0.2% profit can be achieved.
+	profitLimitPrice := decimal.NewFromFloat(basePrice * 1.002)
+	// Sell is 0.12% lower than base price (i.e. AvgFillPrice).
+	stopPrice := decimal.NewFromFloat(basePrice - basePrice * .0012)
+	// Set a limit on the sell price at 0.17% lower than the base price.
+	lossLimitPrice := decimal.NewFromFloat(basePrice - basePrice * .0017)
+
+	var err error
+	p.SellOrder, err = c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
+		Side:        alpaca.Sell,
+		AssetKey:    &c.stockSymbol,
+		Type:        alpaca.Limit,
+		Qty:         decimal.NewFromFloat(purchaseQty),
+		TimeInForce: alpaca.GTC,
+		OrderClass: alpaca.Oco,
+		TakeProfit: &alpaca.TakeProfit{
+			LimitPrice: &profitLimitPrice,
+		},
+		StopLoss: &alpaca.StopLoss{
+			StopPrice: &stopPrice,
+			LimitPrice: &lossLimitPrice,
+		},
+	})
+	if err != nil {
+		log.Printf("unable to place sell order @ %v: %v", t, err)
+		return
+	}
+	log.Printf("sell order placed @ %v:\n%+v", t, p.SellOrder)
 }
 
 // Buy side:
@@ -237,7 +262,7 @@ func (c *client) buy(t time.Time) {
 
 // buyEvent determines if this time is a buy event.
 func (c *client) buyEvent(t time.Time) bool {
-	limit := 2
+	limit := 3
 	startDt := time.Now()
 	endDt := startDt.Add(-5 * time.Second)
 	bars, err := c.alpacaClient.GetSymbolBars(c.stockSymbol, alpaca.ListBarParams{
@@ -250,14 +275,26 @@ func (c *client) buyEvent(t time.Time) bool {
 		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
 		return false
 	}
-	if len(bars) < 2 {
-		log.Printf("did not return at least two bars, so cannot proceed @ %v\n", t)
+	if len(bars) < 3 {
+		log.Printf("did not return at least three bars, so cannot proceed @ %v\n", t)
 		return false
 	}
-	if bars[len(bars)-1].Close <= bars[len(bars)-2].Close {
-		log.Printf("non-positive improvement of $%v => $%v @ %v\n",
-			bars[len(bars)-2].Close, bars[len(bars)-1].Close, t)
+	if !c.allPositiveImprovements(bars) {
+		log.Printf("non-positive improvements")
 		return false
+	}
+	return true
+}
+
+// allPositiveImprovements returns true if each bar improves over the last.
+func (c *client) allPositiveImprovements(bars []alpaca.Bar) bool {
+	for i, b := range bars{
+		if i == 0 {
+			continue
+		}
+		if b.Close <= bars[i-1].Close {
+			return false
+		}
 	}
 	return true
 }
@@ -297,7 +334,7 @@ type webserver struct {
 	alpacaClient *alpaca.Client
 }
 
-// startServer starts a web server to handle health checks.
+// startServer starts a web server to display account data.
 func startServer(alpacaClient *alpaca.Client) {
 	w := &webserver{
 		alpacaClient: alpacaClient,
