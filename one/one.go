@@ -379,6 +379,27 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.String())
 	}
 
+	timePeriod := "14D"
+	timeFrame := alpaca.Day1
+	history, err := ws.alpacaClient.GetPortfolioHistory(
+		&timePeriod, &timeFrame, nil, false)
+	if err != nil {
+		fmt.Fprintf(w, "unable to get daily account history: %v", err)
+		return
+	}
+	// ProfitLoss    []decimal.Decimal `json:"profit_loss"`
+	// ProfitLossPct []decimal.Decimal `json:"profit_loss_pct"`
+
+	fmt.Fprintf(w, "\n\nHistory - 14 Days\n")
+	for i, t := range history.Timestamp {
+		fmt.Fprintf(w, "%v - $%v, Profit: $%v [%%%v]\n",
+			time.Unix(t, 0),
+			history.Equity[i],
+			history.ProfitLoss[i],
+			history.ProfitLossPct[i].Round(6),
+		)
+	}
+
 	activities, err := ws.alpacaClient.GetAccountActivities(nil, nil)
 	if err != nil {
 		fmt.Fprintf(w, "unable to get account activities: %v", err)
@@ -386,7 +407,7 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "\n\nRecent Activity\n")
 	for _, a := range activities {
-		fmt.Fprintf(w, "\n%v: [%v] %v, %v @ $%v\n",
+		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
 			a.TransactionTime, a.Side, a.Symbol, a.Qty, a.Price)
 	}
 }
