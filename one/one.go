@@ -10,7 +10,6 @@ import (
 
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
-	"github.com/ejbrever/trader/purchase"
 	"github.com/shopspring/decimal"
 )
 
@@ -35,10 +34,74 @@ const (
 	timeBeforeMarketCloseToSell = 1*time.Hour
 )
 
+// PST is the timezone for the Pacific time.
+var PST *time.Location
+
 // Purchase stores information related to a purchase.
 type Purchase struct {
 	BuyOrder  *alpaca.Order
 	SellOrder *alpaca.Order
+	SellFilledYearDay int  // The day of the year that the sale is made.
+}
+
+// AllSold returns true when the full quantity is sold and order if filled.
+func (p *Purchase) AllSold() bool {
+	if p.SellOrder == nil {
+		return false
+	}
+	return p.SellOrder.Status == "filled"
+}
+
+// AllBought returns true when the full quantity is bought and order if filled.
+func (p *Purchase) AllBought() bool {
+	if p.BuyOrder == nil {
+		return false
+	}
+	return p.BuyOrder.Status == "filled"
+}
+
+// BuyInitiatedAndNotFilled returns true when the buy order is created and not
+// yet filled.
+func (p *Purchase) BuyInitiatedAndNotFilled() bool {
+	if p.BuyOrder == nil {
+		return false
+	}
+	if p.BuyOrder.CreatedAt.IsZero() {
+		return false
+	}
+	if p.BuyOrder.Status == "filled" {
+		return false
+	}
+	return true
+}
+
+var inProgressOrFilledStates = map[string]bool{
+	"new": true,
+	"partially_filled": true,
+	"filled": true,
+	"done_for_day": true,
+	"accepted ": true,
+	"pending_new ": true,
+	"accepted_for_bidding": true,
+	"calculated": true,
+}
+
+// BuyInProgressOrFilled returns true when the buy order is at any non-cancelled
+// stage.
+func (p *Purchase) BuyInProgressOrFilled() bool {
+	if p.BuyOrder == nil {
+		return false
+	}
+	return inProgressOrFilledStates[p.BuyOrder.Status]
+}
+
+
+// GetSellFilledYearDay returns the year day in PST that the sell was filled.
+func (p *Purchase) GetSellFilledYearDay() int {
+	if p.SellFilledYearDay == 0 {
+		p.SellFilledYearDay = p.SellOrder.FilledAt.In(PST).YearDay()
+	}
+	return p.SellFilledYearDay
 }
 
 // BuyFilledAvgPriceFloat returns the average fill price of a buy event.
@@ -103,7 +166,7 @@ func (p *Purchase) InProgressSellOrder() bool {
 type client struct {
 	allowedPurchases int
 	alpacaClient     *alpaca.Client
-	purchases        []*purchase.Purchase
+	purchases        []*Purchase
 	stockSymbol      string
 	trading          bool  // Is trading currently allowed by the algo?
 }
@@ -118,13 +181,28 @@ func new(stockSymbol string, allowedPurchases int) *client {
 
 // boughtNotSold returns a slice of purchases that have been bought and not been
 // sold.
-func (c *client) boughtNotSold() []*purchase.Purchase {
-	var notSold []*purchase.Purchase
+func (c *client) boughtNotSold() []*Purchase {
+	var notSold []*Purchase
 	for _, p := range c.purchases {
-		if p.BuyOrder == nil || p.BuyOrder.FilledAt == nil {
+		if !p.AllBought() {
 			continue
 		}
-		if p.SellOrder == nil || p.SellOrder.FilledAt == nil {
+		if !p.AllSold() {
+			notSold = append(notSold, p)
+		}
+	}
+	return notSold
+}
+
+// buyOrderAtAnyValidStageButNotSold returns a slice of purchases where the buy
+// is at any valid stage (in progress or filled) and has not been entirely sold.
+func (c *client) buyOrderAtAnyValidStageButNotSold() []*Purchase {
+	var notSold []*Purchase
+	for _, p := range c.purchases {
+		if !p.BuyInProgressOrFilled() {
+			continue
+		}
+		if !p.AllSold() {
 			notSold = append(notSold, p)
 		}
 	}
@@ -133,8 +211,8 @@ func (c *client) boughtNotSold() []*purchase.Purchase {
 
 // inProgressBuyOrders returns a slice of all buy purchases which are still
 // open and in progress.
-func (c *client) inProgressBuyOrders() []*purchase.Purchase {
-	var inProgress []*purchase.Purchase
+func (c *client) inProgressBuyOrders() []*Purchase {
+	var inProgress []*Purchase
 	for _, p := range c.purchases {
 		if !p.InProgressBuyOrder() {
 			continue
@@ -146,8 +224,8 @@ func (c *client) inProgressBuyOrders() []*purchase.Purchase {
 
 // unfulfilledSellOrders returns a slice of all sell purchases which are still
 // open and in progress.
-func (c *client) inProgressSellOrders() []*purchase.Purchase {
-	var inProgress []*purchase.Purchase
+func (c *client) inProgressSellOrders() []*Purchase {
+	var inProgress []*Purchase
 	for _, p := range c.purchases {
 		if !p.InProgressSellOrder() {
 			continue
@@ -211,7 +289,7 @@ func (c *client) sell(t time.Time) {
 	}
 }
 
-func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
+func (c *client) placeSellOrder(t time.Time, p *Purchase) {
 	basePrice := float64(p.BuyFilledAvgPriceFloat())
 	if basePrice == 0 {
 		log.Printf("filledAvgPrice cannot be 0 for order @ %v:\n%+v", t, p.BuyOrder)
@@ -251,7 +329,7 @@ func (c *client) placeSellOrder(t time.Time, p *purchase.Purchase) {
 // Look at most recent two 1sec Bars.
 // If positive direction, buy.
 func (c *client) buy(t time.Time) {
-	if len(c.boughtNotSold()) >= c.allowedPurchases {
+	if len(c.buyOrderAtAnyValidStageButNotSold()) >= c.allowedPurchases {
 		log.Printf("allowable purchases used @ %v\n", t)
 		return
 	}
@@ -314,7 +392,7 @@ func (c *client) placeBuyOrder(t time.Time) {
 		log.Printf("unable to place buy order @ %v: %v\n", t, err)
 		return
 	}
-	c.purchases = append(c.purchases, &purchase.Purchase{
+	c.purchases = append(c.purchases, &Purchase{
 		BuyOrder: o,
 	})
 	log.Printf("buy order placed @ %v:\n%+v\n", t, o)
@@ -329,6 +407,23 @@ func (c *client) closeOutTrading() {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
 	log.Printf("My hour of trading is over!")
+}
+
+// todaysCompletedPurchases returns all purchases in which the sell was
+// completed today in PST.
+func (c *client) todaysCompletedPurchases() []*Purchase {
+	var today []*Purchase
+	todayYearDay := time.Now().In(PST).YearDay()
+	for _, p := range c.purchases {
+		if !p.AllSold() {
+			continue
+		}
+		if p.GetSellFilledYearDay() != todayYearDay {
+			continue
+		}
+		today = append(today, p)
+	}
+	return today
 }
 
 type webserver struct {
@@ -370,6 +465,9 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.String())
 	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.String())
+	fmt.Fprintf(w, "Purchases open: %v/%v\n",
+		len(ws.client.buyOrderAtAnyValidStageButNotSold()),
+		ws.client.allowedPurchases)
 
 	positions, err := ws.client.alpacaClient.ListPositions()
 	if err != nil {
@@ -393,16 +491,28 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "unable to get daily account history: %v", err)
 		return
 	}
-
 	fmt.Fprintf(w, "\n\nHistory - 14 Days\n")
 	for i, t := range history.Timestamp {
-		fmt.Fprintf(w, "%v - $%v, Profit: $%v [%%%v]\n",
+		fmt.Fprintf(w, "%v: $%v, Profit: $%v [%%%v]\n",
 			time.Unix(t, 0),
 			history.Equity[i],
 			history.ProfitLoss[i],
 			history.ProfitLossPct[i].Mul(decimal.NewFromInt(100)).Round(3),
 		)
 	}
+
+	fmt.Fprintf(w, "\n\nToday's Completed Wins/Losses\n")
+	for _, p := range ws.client.todaysCompletedPurchases() {
+		fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] \n",
+			p.SellOrder.FilledAt.In(PST),
+			p.SellOrder.Symbol,
+			p.SellOrder.Qty,
+			p.BuyOrder.FilledAvgPrice.String(),
+			p.SellOrder.FilledAvgPrice.String(),
+		)
+	}
+
+	// Sold @ TimeX: SPY, Qty: 10 [$10 => $11]
 
 	activities, err := ws.client.alpacaClient.GetAccountActivities(nil, nil)
 	if err != nil {
@@ -412,7 +522,7 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "\n\nRecent Activity\n")
 	for _, a := range activities {
 		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
-			a.TransactionTime, a.Side, a.Symbol, a.Qty, a.Price)
+			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
 	}
 }
 
@@ -484,4 +594,11 @@ func init() {
 	log.Printf("Running w/ credentials [%v %v]\n", common.Credentials().ID, common.Credentials().Secret)
 
 	alpaca.SetBaseUrl("https://paper-api.alpaca.markets")
+
+	var err error
+	PST, err = time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		fmt.Printf("unable to load timezone location: %v", err)
+		os.Exit(1)
+	}
 }
