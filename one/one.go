@@ -406,7 +406,7 @@ func (c *client) closeOutTrading() {
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
-	log.Printf("My hour of trading is over!")
+	log.Printf("My trading is over for a bit!")
 }
 
 // todaysCompletedPurchases returns all purchases in which the sell was
