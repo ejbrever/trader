@@ -101,10 +101,11 @@ func (p *Purchase) InProgressSellOrder() bool {
 }
 
 type client struct {
-	stockSymbol      string
 	allowedPurchases int
-	purchases        []*purchase.Purchase
 	alpacaClient     *alpaca.Client
+	purchases        []*purchase.Purchase
+	stockSymbol      string
+	trading          bool  // Is trading currently allowed by the algo?
 }
 
 func new(stockSymbol string, allowedPurchases int) *client {
@@ -331,13 +332,13 @@ func (c *client) closeOutTrading() {
 }
 
 type webserver struct {
-	alpacaClient *alpaca.Client
+	client *client
 }
 
 // startServer starts a web server to display account data.
-func startServer(alpacaClient *alpaca.Client) {
+func startServer(client *client) {
 	w := &webserver{
-		alpacaClient: alpacaClient,
+		client: client,
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", w)
@@ -355,9 +356,14 @@ func startServer(alpacaClient *alpaca.Client) {
 }
 
 func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Trader One Is Live!\n\n")
+	if ws.client.trading {
+		fmt.Fprintf(w, "Trader One is running and trading!\n\n")
+	} else {
+		fmt.Fprintf(w, "Trader One is running, but not currently trading.\n\n")
+	}
 
-	a, err := ws.alpacaClient.GetAccount()
+
+	a, err := ws.client.alpacaClient.GetAccount()
 	if err != nil {
 		fmt.Fprintf(w, "unable to get account info: %v", err)
 		return
@@ -365,7 +371,7 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.String())
 	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.String())
 
-	positions, err := ws.alpacaClient.ListPositions()
+	positions, err := ws.client.alpacaClient.ListPositions()
 	if err != nil {
 		fmt.Fprintf(w, "unable to get account positions: %v", err)
 		return
@@ -381,14 +387,12 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	timePeriod := "14D"
 	timeFrame := alpaca.Day1
-	history, err := ws.alpacaClient.GetPortfolioHistory(
+	history, err := ws.client.alpacaClient.GetPortfolioHistory(
 		&timePeriod, &timeFrame, nil, false)
 	if err != nil {
 		fmt.Fprintf(w, "unable to get daily account history: %v", err)
 		return
 	}
-	// ProfitLoss    []decimal.Decimal `json:"profit_loss"`
-	// ProfitLossPct []decimal.Decimal `json:"profit_loss_pct"`
 
 	fmt.Fprintf(w, "\n\nHistory - 14 Days\n")
 	for i, t := range history.Timestamp {
@@ -396,11 +400,11 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			time.Unix(t, 0),
 			history.Equity[i],
 			history.ProfitLoss[i],
-			history.ProfitLossPct[i].Round(6),
+			history.ProfitLossPct[i].Mul(decimal.NewFromInt(100)).Round(3),
 		)
 	}
 
-	activities, err := ws.alpacaClient.GetAccountActivities(nil, nil)
+	activities, err := ws.client.alpacaClient.GetAccountActivities(nil, nil)
 	if err != nil {
 		fmt.Fprintf(w, "unable to get account activities: %v", err)
 		return
@@ -433,7 +437,7 @@ func main() {
 	c := new(stockSymbol, maxAllowedPurchases)
 	log.Printf("trader one is now online!")
 
-	go startServer(c.alpacaClient)
+	go startServer(c)
 
 	ticker := time.NewTicker(timeBetweenAction)
 	defer ticker.Stop()
@@ -456,13 +460,16 @@ func main() {
 			switch {
 			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
 				log.Printf("market is closing soon")
+				c.trading = false
 				c.closeOutTrading()
 				time.Sleep(timeBeforeMarketCloseToSell)
 				continue
 			case !clock.IsOpen:
+				c.trading = false
 				log.Printf("market is not open :(")
 				continue
 			default:
+				c.trading = true
 				log.Printf("market is open!")
 			}
 			go c.run(t)
