@@ -179,19 +179,19 @@ func new(stockSymbol string, allowedPurchases int) *client {
 	}
 }
 
-// boughtNotSold returns a slice of purchases that have been bought and not been
-// sold.
-func (c *client) boughtNotSold() []*Purchase {
-	var notSold []*Purchase
+// boughtNotSelling returns a slice of purchases that have been bought and
+// and a sell order is not placed.
+func (c *client) boughtNotSelling() []*Purchase {
+	var notSelling []*Purchase
 	for _, p := range c.purchases {
 		if !p.AllBought() {
 			continue
 		}
-		if !p.AllSold() {
-			notSold = append(notSold, p)
+		if p.SellOrder == nil {
+			notSelling = append(notSelling, p)
 		}
 	}
-	return notSold
+	return notSelling
 }
 
 // buyOrderAtAnyValidStageButNotSold returns a slice of purchases where the buy
@@ -280,11 +280,11 @@ func (c *client) updateOrders() error {
 // Sell side:
 // If current price greater than buy price, then sell.
 func (c *client) sell(t time.Time) {
-	boughtNotSold := c.boughtNotSold()
-	if len(boughtNotSold) == 0 {
+	boughtNotSelling := c.boughtNotSelling()
+	if len(boughtNotSelling) == 0 {
 		return
 	}
-	for _, p := range boughtNotSold {
+	for _, p := range boughtNotSelling {
 		c.placeSellOrder(t, p)
 	}
 }
@@ -463,8 +463,8 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "unable to get account info: %v", err)
 		return
 	}
-	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.String())
-	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.String())
+	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.StringFixed(2))
+	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.StringFixed(2))
 	fmt.Fprintf(w, "Purchases open: %v/%v\n",
 		len(ws.client.buyOrderAtAnyValidStageButNotSold()),
 		ws.client.allowedPurchases)
@@ -512,8 +512,6 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Sold @ TimeX: SPY, Qty: 10 [$10 => $11]
-
 	activities, err := ws.client.alpacaClient.GetAccountActivities(nil, nil)
 	if err != nil {
 		fmt.Fprintf(w, "unable to get account activities: %v", err)
@@ -523,6 +521,12 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, a := range activities {
 		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
 			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
+	}
+
+	fmt.Fprintf(w, "\n\nDeep dive of purchases\n")
+	for _, p := range ws.client.purchases {
+		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
+		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
 	}
 }
 
