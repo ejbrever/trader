@@ -34,8 +34,33 @@ const (
 	timeBeforeMarketCloseToSell = 1*time.Hour
 )
 
-// PST is the timezone for the Pacific time.
-var PST *time.Location
+var (
+	// PST is the timezone for the Pacific time.
+	PST *time.Location
+
+	// orderCompletedStates are states when an order receives no further updates.
+	var orderCompletedStates = map[string]bool{
+		"filled": true,
+		"cancelled": true,
+		"expired": true,
+		"replaced": true,
+		"stopped ": true,
+		"rejected ": true,
+		"suspended ": true,
+	}
+
+	// inProgressOrFilledStates are states when an order is in-progress or filled.
+	var inProgressOrFilledStates = map[string]bool{
+		"new": true,
+		"partially_filled": true,
+		"filled": true,
+		"done_for_day": true,
+		"accepted ": true,
+		"pending_new ": true,
+		"accepted_for_bidding": true,
+		"calculated": true,
+	}
+)
 
 // Purchase stores information related to a purchase.
 type Purchase struct {
@@ -73,17 +98,6 @@ func (p *Purchase) BuyInitiatedAndNotFilled() bool {
 		return false
 	}
 	return true
-}
-
-var inProgressOrFilledStates = map[string]bool{
-	"new": true,
-	"partially_filled": true,
-	"filled": true,
-	"done_for_day": true,
-	"accepted ": true,
-	"pending_new ": true,
-	"accepted_for_bidding": true,
-	"calculated": true,
 }
 
 // BuyInProgressOrFilled returns true when the buy order is at any non-cancelled
@@ -163,6 +177,15 @@ func (p *Purchase) InProgressSellOrder() bool {
 	return true
 }
 
+// NotSelling determines if the sell order is *not* in progress.
+func (p *Purchase) NotSelling() bool {
+	if p.SellOrder == nil {
+		return true
+	}
+	return p.orderCompletedStates[p.SellOrder.Status]
+
+}
+
 type client struct {
 	allowedPurchases int
 	alpacaClient     *alpaca.Client
@@ -187,7 +210,7 @@ func (c *client) boughtNotSelling() []*Purchase {
 		if !p.AllBought() {
 			continue
 		}
-		if p.SellOrder == nil {
+		if p.NotSelling() {
 			notSelling = append(notSelling, p)
 		}
 	}
