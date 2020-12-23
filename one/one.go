@@ -266,9 +266,13 @@ func (c *client) updateOrders() error {
 			return fmt.Errorf("GetOrder %q error: %v", id, err)
 		}
 		if o.SellOrder.ReplacedBy != nil {
-			o.SellOrder, err = c.alpacaClient.GetOrder(*o.SellOrder.ReplacedBy)
+			replacedSellOrder, err := c.alpacaClient.GetOrder(*o.SellOrder.ReplacedBy)
 			if err != nil {
 				return fmt.Errorf("GetOrder %q error: %v", id, err)
+			}
+			fmt.Errorf("replaced order: %+v", replacedSellOrder)
+			if replacedSellOrder != nil {
+				o.SellOrder = replacedSellOrder
 			}
 		}
 	}
