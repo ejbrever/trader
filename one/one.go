@@ -179,19 +179,19 @@ func new(stockSymbol string, allowedPurchases int) *client {
 	}
 }
 
-// boughtNotSold returns a slice of purchases that have been bought and not been
-// sold.
-func (c *client) boughtNotSold() []*Purchase {
-	var notSold []*Purchase
+// boughtNotSelling returns a slice of purchases that have been bought and
+// and a sell order is not placed.
+func (c *client) boughtNotSelling() []*Purchase {
+	var notSelling []*Purchase
 	for _, p := range c.purchases {
 		if !p.AllBought() {
 			continue
 		}
-		if !p.AllSold() {
-			notSold = append(notSold, p)
+		if p.SellOrder == nil {
+			notSelling = append(notSelling, p)
 		}
 	}
-	return notSold
+	return notSelling
 }
 
 // buyOrderAtAnyValidStageButNotSold returns a slice of purchases where the buy
@@ -280,11 +280,11 @@ func (c *client) updateOrders() error {
 // Sell side:
 // If current price greater than buy price, then sell.
 func (c *client) sell(t time.Time) {
-	boughtNotSold := c.boughtNotSold()
-	if len(boughtNotSold) == 0 {
+	boughtNotSelling := c.boughtNotSelling()
+	if len(boughtNotSelling) == 0 {
 		return
 	}
-	for _, p := range boughtNotSold {
+	for _, p := range boughtNotSelling {
 		c.placeSellOrder(t, p)
 	}
 }
@@ -406,7 +406,7 @@ func (c *client) closeOutTrading() {
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
-	log.Printf("My trading is over for a bit!")
+	log.Printf("My hour of trading is over!")
 }
 
 // todaysCompletedPurchases returns all purchases in which the sell was
@@ -523,6 +523,12 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, a := range activities {
 		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
 			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
+	}
+
+	fmt.Fprintf(w, "\n\ndeep dive\n")
+	for _, p := range ws.client.purchases {
+		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
+		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
 	}
 }
 
