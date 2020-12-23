@@ -135,22 +135,7 @@ func (p *Purchase) InProgressBuyOrder() bool {
 	if p.BuyOrder == nil {
 		return false
 	}
-	if p.BuyOrder.FilledAt != nil {
-		return false
-	}
-	if p.BuyOrder.ExpiredAt != nil {
-		return false
-	}
-	if p.BuyOrder.CanceledAt != nil {
-		return false
-	}
-	if p.BuyOrder.FailedAt != nil {
-		return false
-	}
-	if p.BuyOrder.ReplacedAt != nil {
-		return false
-	}
-	return true
+	return !orderCompletedStates[p.BuyOrder.Status]
 }
 
 // InProgressSellOrder determines if the sell order is still open and
@@ -159,22 +144,7 @@ func (p *Purchase) InProgressSellOrder() bool {
 	if p.SellOrder == nil {
 		return false
 	}
-	if p.SellOrder.FilledAt != nil {
-		return false
-	}
-	if p.SellOrder.ExpiredAt != nil {
-		return false
-	}
-	if p.SellOrder.CanceledAt != nil {
-		return false
-	}
-	if p.SellOrder.FailedAt != nil {
-		return false
-	}
-	if p.SellOrder.ReplacedAt != nil {
-		return false
-	}
-	return true
+	return !orderCompletedStates[p.SellOrder.Status]
 }
 
 // NotSelling determines if the sell order is *not* in progress.
