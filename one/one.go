@@ -179,19 +179,19 @@ func new(stockSymbol string, allowedPurchases int) *client {
 	}
 }
 
-// boughtNotSelling returns a slice of purchases that have been bought and
-// and a sell order is not placed.
-func (c *client) boughtNotSelling() []*Purchase {
-	var notSelling []*Purchase
+// boughtNotSold returns a slice of purchases that have been bought and not been
+// sold.
+func (c *client) boughtNotSold() []*Purchase {
+	var notSold []*Purchase
 	for _, p := range c.purchases {
 		if !p.AllBought() {
 			continue
 		}
-		if p.SellOrder == nil {
-			notSelling = append(notSelling, p)
+		if !p.AllSold() {
+			notSold = append(notSold, p)
 		}
 	}
-	return notSelling
+	return notSold
 }
 
 // buyOrderAtAnyValidStageButNotSold returns a slice of purchases where the buy
@@ -280,11 +280,11 @@ func (c *client) updateOrders() error {
 // Sell side:
 // If current price greater than buy price, then sell.
 func (c *client) sell(t time.Time) {
-	boughtNotSelling := c.boughtNotSelling()
-	if len(boughtNotSelling) == 0 {
+	boughtNotSold := c.boughtNotSold()
+	if len(boughtNotSold) == 0 {
 		return
 	}
-	for _, p := range boughtNotSelling {
+	for _, p := range boughtNotSold {
 		c.placeSellOrder(t, p)
 	}
 }
@@ -406,7 +406,7 @@ func (c *client) closeOutTrading() {
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
-	log.Printf("My hour of trading is over!")
+	log.Printf("My trading is over for a bit!")
 }
 
 // todaysCompletedPurchases returns all purchases in which the sell was
@@ -478,9 +478,9 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, p := range positions {
 		fmt.Fprintf(w, "\nSymbol: %v\n", p.Symbol)
 		fmt.Fprintf(w, "Qty: %v\n", p.Qty)
-		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.String())
-		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.String())
-		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.String())
+		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.StringFixed(2))
+		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.StringFixed(2))
+		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.StringFixed(2))
 	}
 
 	timePeriod := "14D"
@@ -507,8 +507,8 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.SellOrder.FilledAt.In(PST),
 			p.SellOrder.Symbol,
 			p.SellOrder.Qty,
-			p.BuyOrder.FilledAvgPrice.String(),
-			p.SellOrder.FilledAvgPrice.String(),
+			p.BuyOrder.FilledAvgPrice.StringFixed(2),
+			p.SellOrder.FilledAvgPrice.StringFixed(2),
 		)
 	}
 
@@ -523,12 +523,6 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for _, a := range activities {
 		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
 			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
-	}
-
-	fmt.Fprintf(w, "\n\ndeep dive\n")
-	for _, p := range ws.client.purchases {
-		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
-		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
 	}
 }
 
