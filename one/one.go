@@ -39,7 +39,7 @@ var (
 	PST *time.Location
 
 	// orderCompletedStates are states when an order receives no further updates.
-	var orderCompletedStates = map[string]bool{
+	orderCompletedStates = map[string]bool{
 		"filled": true,
 		"cancelled": true,
 		"expired": true,
@@ -50,7 +50,7 @@ var (
 	}
 
 	// inProgressOrFilledStates are states when an order is in-progress or filled.
-	var inProgressOrFilledStates = map[string]bool{
+	inProgressOrFilledStates = map[string]bool{
 		"new": true,
 		"partially_filled": true,
 		"filled": true,
@@ -182,7 +182,7 @@ func (p *Purchase) NotSelling() bool {
 	if p.SellOrder == nil {
 		return true
 	}
-	return p.orderCompletedStates[p.SellOrder.Status]
+	return orderCompletedStates[p.SellOrder.Status]
 
 }
 
