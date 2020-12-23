@@ -43,7 +43,6 @@ var (
 		"filled": true,
 		"cancelled": true,
 		"expired": true,
-		"replaced": true,
 		"stopped ": true,
 		"rejected ": true,
 		"suspended ": true,
