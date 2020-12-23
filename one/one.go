@@ -340,8 +340,8 @@ func (c *client) buy(t time.Time) {
 // buyEvent determines if this time is a buy event.
 func (c *client) buyEvent(t time.Time) bool {
 	limit := 3
-	startDt := time.Now()
-	endDt := startDt.Add(-5 * time.Second)
+	endDt := time.Now()
+	startDt := endDt.Add(-5 * time.Minute)
 	bars, err := c.alpacaClient.GetSymbolBars(c.stockSymbol, alpaca.ListBarParams{
 		Timeframe: "1Min",
 		StartDt:   &startDt,
@@ -353,7 +353,9 @@ func (c *client) buyEvent(t time.Time) bool {
 		return false
 	}
 	if len(bars) < 3 {
-		log.Printf("did not return at least three bars, so cannot proceed @ %v\n", t)
+		log.Printf(
+			"did not return at least three bars, so cannot proceed @ %v\ngot: %+v",
+			t, bars)
 		return false
 	}
 	if !c.allPositiveImprovements(bars) {
