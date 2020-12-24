@@ -1,4 +1,4 @@
-module github.com/trader
+module github.com/ejbrever/trader/one/purchase
 
 go 1.15
 
