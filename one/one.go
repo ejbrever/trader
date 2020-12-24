@@ -48,11 +48,20 @@ var (
 		"suspended ": true,
 	}
 
-	// inProgressOrFilledStates are states when an order is in-progress or filled.
-	inProgressOrFilledStates = map[string]bool{
+	// endedUnsuccessfullyStates are the states when an order was not filled and
+	// will receive no further updates.
+	endedUnsuccessfullyStates = map[string]bool{
+		"cancelled": true,
+		"expired": true,
+		"stopped ": true,
+		"rejected ": true,
+		"suspended ": true,
+	}
+
+	// inProgressStates are states when an order is in-progress or filled.
+	inProgressStates = map[string]bool{
 		"new": true,
 		"partially_filled": true,
-		"filled": true,
 		"done_for_day": true,
 		"accepted ": true,
 		"pending_new ": true,
@@ -68,20 +77,36 @@ type Purchase struct {
 	SellFilledYearDay int  // The day of the year that the sale is made.
 }
 
-// AllSold returns true when the full quantity is sold and order if filled.
-func (p *Purchase) AllSold() bool {
+// SellFilled returns true when the sell order if filled.
+func (p *Purchase) SellFilled() bool {
 	if p.SellOrder == nil {
 		return false
 	}
 	return p.SellOrder.Status == "filled"
 }
 
-// AllBought returns true when the full quantity is bought and order if filled.
-func (p *Purchase) AllBought() bool {
+// BuyFilled returns true when the full quantity is bought and order if filled.
+func (p *Purchase) BuyFilled() bool {
 	if p.BuyOrder == nil {
 		return false
 	}
 	return p.BuyOrder.Status == "filled"
+}
+
+// SellHasStatus returns true when the sell order has the provided status.
+func (p *Purchase) SellHasStatus(s string) bool {
+	if p.SellOrder == nil {
+		return false
+	}
+	return p.SellOrder.Status == s
+}
+
+// BuyHasStatus returns true when the buy order has the provided status.
+func (p *Purchase) BuyHasStatus(s string) bool {
+	if p.BuyOrder == nil {
+		return false
+	}
+	return p.BuyOrder.Status == s
 }
 
 // BuyInitiatedAndNotFilled returns true when the buy order is created and not
@@ -99,15 +124,21 @@ func (p *Purchase) BuyInitiatedAndNotFilled() bool {
 	return true
 }
 
-// BuyInProgressOrFilled returns true when the buy order is at any non-cancelled
-// stage.
-func (p *Purchase) BuyInProgressOrFilled() bool {
+// BuyInProgress returns true when the buy order is at any in-progress stage.
+func (p *Purchase) BuyInProgress() bool {
 	if p.BuyOrder == nil {
 		return false
 	}
-	return inProgressOrFilledStates[p.BuyOrder.Status]
+	return inProgressStates[p.BuyOrder.Status]
 }
 
+// SellInProgress returns true when the sell order is at any in-progress stage.
+func (p *Purchase) SellInProgress() bool {
+	if p.SellOrder == nil {
+		return false
+	}
+	return inProgressStates[p.SellOrder.Status]
+}
 
 // GetSellFilledYearDay returns the year day in PST that the sell was filled.
 func (p *Purchase) GetSellFilledYearDay() int {
@@ -146,13 +177,13 @@ func (p *Purchase) InProgressSellOrder() bool {
 	return !orderCompletedStates[p.SellOrder.Status]
 }
 
-// NotSelling determines if the sell order is *not* in progress.
+// NotSelling determines if the sell order is *not* in progress. This would be
+// because an order has not been created or an order ended unsuccessfully.
 func (p *Purchase) NotSelling() bool {
 	if p.SellOrder == nil {
 		return true
 	}
-	return orderCompletedStates[p.SellOrder.Status]
-
+	return endedUnsuccessfullyStates[p.SellOrder.Status]
 }
 
 type client struct {
@@ -176,7 +207,7 @@ func new(stockSymbol string, allowedPurchases int) *client {
 func (c *client) boughtNotSelling() []*Purchase {
 	var notSelling []*Purchase
 	for _, p := range c.purchases {
-		if !p.AllBought() {
+		if !p.BuyFilled() {
 			continue
 		}
 		if p.NotSelling() {
@@ -186,19 +217,21 @@ func (c *client) boughtNotSelling() []*Purchase {
 	return notSelling
 }
 
-// buyOrderAtAnyValidStageButNotSold returns a slice of purchases where the buy
-// is at any valid stage (in progress or filled) and has not been entirely sold.
-func (c *client) buyOrderAtAnyValidStageButNotSold() []*Purchase {
-	var notSold []*Purchase
+// inProgressPurchases returns a slice of purchases where the buy is at any
+// valid stage (in progress or filled) and has not been entirely sold.
+func (c *client) inProgressPurchases() []*Purchase {
+	var inProgress []*Purchase
 	for _, p := range c.purchases {
-		if !p.BuyInProgressOrFilled() {
+		switch {
+		case p.SellFilled():
 			continue
-		}
-		if !p.AllSold() {
-			notSold = append(notSold, p)
+		case p.BuyInProgress() || p.SellInProgress():
+			inProgress = append(inProgress, p)
+		case p.BuyHasStatus("replaced") || p.SellHasStatus("replaced"):
+			inProgress = append(inProgress, p)
 		}
 	}
-	return notSold
+	return inProgress
 }
 
 // inProgressBuyOrders returns a slice of all buy purchases which are still
@@ -228,13 +261,9 @@ func (c *client) inProgressSellOrders() []*Purchase {
 }
 
 func (c *client) run(t time.Time) {
-	if err := c.updateOrders(); err != nil {
-		log.Printf("updateOrders @ %v: %v\n", t, err)
-		return
-	}
 	c.cancelOutdatedOrders()
 	c.buy(t)
-	c.sell(t)
+	c.sell()
 }
 
 // cancelOutdatedOrders cancels all buy orders that have been outstanding for
@@ -250,51 +279,22 @@ func (c *client) cancelOutdatedOrders() {
 	}
 }
 
-func (c *client) updateOrders() error {
-	var err error
-	for _, o := range c.inProgressBuyOrders() {
-		id := o.BuyOrder.ID
-		o.BuyOrder, err = c.alpacaClient.GetOrder(id)
-		if err != nil {
-			return fmt.Errorf("GetOrder %q error: %v", id, err)
-		}
-	}
-	for _, o := range c.inProgressSellOrders() {
-		id := o.SellOrder.ID
-		o.SellOrder, err = c.alpacaClient.GetOrder(id)
-		if err != nil {
-			return fmt.Errorf("GetOrder %q error: %v", id, err)
-		}
-		if o.SellOrder.ReplacedBy != nil {
-			replacedSellOrder, err := c.alpacaClient.GetOrder(*o.SellOrder.ReplacedBy)
-			if err != nil {
-				return fmt.Errorf("GetOrder %q error: %v", id, err)
-			}
-			fmt.Errorf("replaced order: %+v", replacedSellOrder)
-			if replacedSellOrder != nil {
-				o.SellOrder = replacedSellOrder
-			}
-		}
-	}
-	return nil
-}
-
-// Sell side:
-// If current price greater than buy price, then sell.
-func (c *client) sell(t time.Time) {
+// sell initiates sell orders for all needed purchases.
+func (c *client) sell() {
 	boughtNotSelling := c.boughtNotSelling()
 	if len(boughtNotSelling) == 0 {
 		return
 	}
 	for _, p := range boughtNotSelling {
-		c.placeSellOrder(t, p)
+		c.placeSellOrder(p)
 	}
 }
 
-func (c *client) placeSellOrder(t time.Time, p *Purchase) {
+func (c *client) placeSellOrder(p *Purchase) {
 	basePrice := float64(p.BuyFilledAvgPriceFloat())
 	if basePrice == 0 {
-		log.Printf("filledAvgPrice cannot be 0 for order @ %v:\n%+v", t, p.BuyOrder)
+		log.Printf(
+			"filledAvgPrice cannot be 0 for order:\nBuyOrder: %+v\n", p.BuyOrder)
 		return
 	}
 	// Take a profit as soon as 0.2% profit can be achieved.
@@ -321,17 +321,18 @@ func (c *client) placeSellOrder(t time.Time, p *Purchase) {
 		},
 	})
 	if err != nil {
-		log.Printf("unable to place sell order @ %v: %v", t, err)
+		log.Printf("unable to place sell order: %v\npurchase:\nbuy:%+v\nsell:%+v\n",
+			err, p.BuyOrder, p.SellOrder)
 		return
 	}
-	log.Printf("sell order placed @ %v:\n%+v", t, p.SellOrder)
+	log.Printf("sell order placed:\n%+v\n", p.SellOrder)
 }
 
 // Buy side:
 // Look at most recent two 1sec Bars.
 // If positive direction, buy.
 func (c *client) buy(t time.Time) {
-	if len(c.buyOrderAtAnyValidStageButNotSold()) >= c.allowedPurchases {
+	if len(c.inProgressPurchases()) >= c.allowedPurchases {
 		log.Printf("allowable purchases used @ %v\n", t)
 		return
 	}
@@ -419,7 +420,7 @@ func (c *client) todaysCompletedPurchases() []*Purchase {
 	var today []*Purchase
 	todayYearDay := time.Now().In(PST).YearDay()
 	for _, p := range c.purchases {
-		if !p.AllSold() {
+		if !p.SellFilled() {
 			continue
 		}
 		if p.GetSellFilledYearDay() != todayYearDay {
@@ -432,6 +433,49 @@ func (c *client) todaysCompletedPurchases() []*Purchase {
 
 type webserver struct {
 	client *client
+}
+
+// order returns details for a given order. If the order was replaced, it
+// returns details for the new order.
+func (c *client) order(id string) *alpaca.Order {
+	order, err := c.alpacaClient.GetOrder(id)
+	if err != nil {
+		fmt.Printf("GetOrder %q error: %v", id, err)
+		return nil
+	}
+	if order == nil {
+		return nil
+	}
+	if order.ReplacedBy != nil {
+		replacedOrder, err := c.alpacaClient.GetOrder(*order.ReplacedBy)
+		if err != nil {
+			fmt.Printf("Replaced GetOrder %q (original ID: %q) error: %v", *order.ReplacedBy, id, err)
+			return nil
+		}
+		if replacedOrder == nil {
+			return nil
+		}
+		order = replacedOrder
+	}
+	return order
+}
+
+// updateOrders updates all in progress orders with their latest details.
+func (c *client) updateOrders() {
+	for _, o := range c.inProgressBuyOrders() {
+		order := c.order(o.BuyOrder.ID)
+		if order == nil {
+			continue
+		}
+		o.BuyOrder = order
+	}
+	for _, o := range c.inProgressSellOrders() {
+		order := c.order(o.SellOrder.ID)
+		if order == nil {
+			continue
+		}
+		o.SellOrder = order
+	}
 }
 
 // startServer starts a web server to display account data.
@@ -470,8 +514,7 @@ func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.StringFixed(2))
 	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.StringFixed(2))
 	fmt.Fprintf(w, "Purchases open: %v/%v\n",
-		len(ws.client.buyOrderAtAnyValidStageButNotSold()),
-		ws.client.allowedPurchases)
+		len(ws.client.inProgressPurchases()), ws.client.allowedPurchases)
 
 	positions, err := ws.client.alpacaClient.ListPositions()
 	if err != nil {
@@ -575,6 +618,7 @@ func main() {
 				log.Printf("error checking if market is open: %v", err)
 				continue
 			}
+			c.updateOrders()
 			switch {
 			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
 				log.Printf("market is closing soon")
