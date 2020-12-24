@@ -5,6 +5,13 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ejbrever/trader v1.0.1 h1:kxW2iFvFxSIrZq+UsOzj7wiYe1qThBX+2pZtTT/+RFs=
 github.com/ejbrever/trader v1.0.1/go.mod h1:KjPBV92f0YE9Rytv/ns0Im/qpn8G9G/XONwaT3BJKr4=
+github.com/ejbrever/trader v1.1.1 h1:m088clycuLnVQxj91PoAubK1f5fe3cZgw5WI7cYEF/0=
+github.com/ejbrever/trader v1.2.0 h1:0VWx0Mx9eSDXhH5vYDd6zC/ZmfrTBqX87yV4G32ipr0=
+github.com/ejbrever/trader/one v0.0.0-20201224055340-675b7010453f h1:10WpXsdBvsgBaUOrneYigduFaGnjj2ItseSPL6MOOSU=
+github.com/ejbrever/trader/one v0.0.0-20201224063600-0f8271e98b6b h1:iTJh9dRhZDdqY8PFjO5qgyQbSf5ro7tWaBW+E/JgVHg=
+github.com/ejbrever/trader/one v0.0.0-20201224065752-cf72d6160a5a h1:rATqQoSlJlLW6YtsgLE9gg0+hQep14V4cZ1YMG2FpLM=
+github.com/ejbrever/trader/one/purchase v0.0.0-20201224065752-cf72d6160a5a h1:HCREmIQvVg6/JElYvnCuhSb7XSPtpyP4x3dS+esucfU=
+github.com/ejbrever/trader/one/purchase v0.0.0-20201224065752-cf72d6160a5a/go.mod h1:hUCnQOOv0ZuiuAUNsWWzfCB7WM7r0wQSOA0HVJXrbLo=
 github.com/gorilla/websocket v1.4.0 h1:WDFjx/TMzVgy9VdMMQi2K2Emtwi2QcUQsztZ/zLaH/Q=
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=

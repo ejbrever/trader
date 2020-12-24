@@ -10,6 +10,7 @@ import (
 
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
+	"github.com/ejbrever/trader/one/purchase"
 	"github.com/shopspring/decimal"
 )
 
@@ -37,159 +38,12 @@ const (
 var (
 	// PST is the timezone for the Pacific time.
 	PST *time.Location
-
-	// orderCompletedStates are states when an order receives no further updates.
-	orderCompletedStates = map[string]bool{
-		"filled": true,
-		"cancelled": true,
-		"expired": true,
-		"stopped ": true,
-		"rejected ": true,
-		"suspended ": true,
-	}
-
-	// endedUnsuccessfullyStates are the states when an order was not filled and
-	// will receive no further updates.
-	endedUnsuccessfullyStates = map[string]bool{
-		"cancelled": true,
-		"expired": true,
-		"stopped ": true,
-		"rejected ": true,
-		"suspended ": true,
-	}
-
-	// inProgressStates are states when an order is in-progress or filled.
-	inProgressStates = map[string]bool{
-		"new": true,
-		"partially_filled": true,
-		"done_for_day": true,
-		"accepted ": true,
-		"pending_new ": true,
-		"accepted_for_bidding": true,
-		"calculated": true,
-	}
 )
-
-// Purchase stores information related to a purchase.
-type Purchase struct {
-	BuyOrder  *alpaca.Order
-	SellOrder *alpaca.Order
-	SellFilledYearDay int  // The day of the year that the sale is made.
-}
-
-// SellFilled returns true when the sell order if filled.
-func (p *Purchase) SellFilled() bool {
-	if p.SellOrder == nil {
-		return false
-	}
-	return p.SellOrder.Status == "filled"
-}
-
-// BuyFilled returns true when the full quantity is bought and order if filled.
-func (p *Purchase) BuyFilled() bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	return p.BuyOrder.Status == "filled"
-}
-
-// SellHasStatus returns true when the sell order has the provided status.
-func (p *Purchase) SellHasStatus(s string) bool {
-	if p.SellOrder == nil {
-		return false
-	}
-	return p.SellOrder.Status == s
-}
-
-// BuyHasStatus returns true when the buy order has the provided status.
-func (p *Purchase) BuyHasStatus(s string) bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	return p.BuyOrder.Status == s
-}
-
-// BuyInitiatedAndNotFilled returns true when the buy order is created and not
-// yet filled.
-func (p *Purchase) BuyInitiatedAndNotFilled() bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	if p.BuyOrder.CreatedAt.IsZero() {
-		return false
-	}
-	if p.BuyOrder.Status == "filled" {
-		return false
-	}
-	return true
-}
-
-// BuyInProgress returns true when the buy order is at any in-progress stage.
-func (p *Purchase) BuyInProgress() bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	return inProgressStates[p.BuyOrder.Status]
-}
-
-// SellInProgress returns true when the sell order is at any in-progress stage.
-func (p *Purchase) SellInProgress() bool {
-	if p.SellOrder == nil {
-		return false
-	}
-	return inProgressStates[p.SellOrder.Status]
-}
-
-// GetSellFilledYearDay returns the year day in PST that the sell was filled.
-func (p *Purchase) GetSellFilledYearDay() int {
-	if p.SellFilledYearDay == 0 {
-		p.SellFilledYearDay = p.SellOrder.FilledAt.In(PST).YearDay()
-	}
-	return p.SellFilledYearDay
-}
-
-// BuyFilledAvgPriceFloat returns the average fill price of a buy event.
-func (p *Purchase) BuyFilledAvgPriceFloat() float64 {
-	f, _ := p.BuyOrder.FilledAvgPrice.Float64()
-	return f
-}
-
-// SoldFilledAvgPriceFloat returns the average fill price of a sell event.
-func (p *Purchase) SoldFilledAvgPriceFloat() float64 {
-	f, _ := p.SellOrder.FilledAvgPrice.Float64()
-	return f
-}
-
-// InProgressBuyOrder determines if the buy order is still open and in progress.
-func (p *Purchase) InProgressBuyOrder() bool {
-	if p.BuyOrder == nil {
-		return false
-	}
-	return !orderCompletedStates[p.BuyOrder.Status]
-}
-
-// InProgressSellOrder determines if the sell order is still open and
-// in progress.
-func (p *Purchase) InProgressSellOrder() bool {
-	if p.SellOrder == nil {
-		return false
-	}
-	return !orderCompletedStates[p.SellOrder.Status]
-}
-
-// NotSelling determines if the sell order is *not* in progress. This would be
-// because an order has not been created or an order ended unsuccessfully.
-func (p *Purchase) NotSelling() bool {
-	if p.SellOrder == nil {
-		return true
-	}
-	return endedUnsuccessfullyStates[p.SellOrder.Status]
-}
 
 type client struct {
 	allowedPurchases int
 	alpacaClient     *alpaca.Client
-	purchases        []*Purchase
+	purchases        []*purchase.Purchase
 	stockSymbol      string
 	trading          bool  // Is trading currently allowed by the algo?
 }
@@ -204,8 +58,8 @@ func new(stockSymbol string, allowedPurchases int) *client {
 
 // boughtNotSelling returns a slice of purchases that have been bought and
 // and a sell order is not placed.
-func (c *client) boughtNotSelling() []*Purchase {
-	var notSelling []*Purchase
+func (c *client) boughtNotSelling() []*purchase.Purchase {
+	var notSelling []*purchase.Purchase
 	for _, p := range c.purchases {
 		if !p.BuyFilled() {
 			continue
@@ -219,8 +73,8 @@ func (c *client) boughtNotSelling() []*Purchase {
 
 // inProgressPurchases returns a slice of purchases where the buy is at any
 // valid stage (in progress or filled) and has not been entirely sold.
-func (c *client) inProgressPurchases() []*Purchase {
-	var inProgress []*Purchase
+func (c *client) inProgressPurchases() []*purchase.Purchase {
+	var inProgress []*purchase.Purchase
 	for _, p := range c.purchases {
 		switch {
 		case p.SellFilled():
@@ -236,8 +90,8 @@ func (c *client) inProgressPurchases() []*Purchase {
 
 // inProgressBuyOrders returns a slice of all buy purchases which are still
 // open and in progress.
-func (c *client) inProgressBuyOrders() []*Purchase {
-	var inProgress []*Purchase
+func (c *client) inProgressBuyOrders() []*purchase.Purchase {
+	var inProgress []*purchase.Purchase
 	for _, p := range c.purchases {
 		if !p.InProgressBuyOrder() {
 			continue
@@ -249,8 +103,8 @@ func (c *client) inProgressBuyOrders() []*Purchase {
 
 // unfulfilledSellOrders returns a slice of all sell purchases which are still
 // open and in progress.
-func (c *client) inProgressSellOrders() []*Purchase {
-	var inProgress []*Purchase
+func (c *client) inProgressSellOrders() []*purchase.Purchase {
+	var inProgress []*purchase.Purchase
 	for _, p := range c.purchases {
 		if !p.InProgressSellOrder() {
 			continue
@@ -290,7 +144,7 @@ func (c *client) sell() {
 	}
 }
 
-func (c *client) placeSellOrder(p *Purchase) {
+func (c *client) placeSellOrder(p *purchase.Purchase) {
 	basePrice := float64(p.BuyFilledAvgPriceFloat())
 	if basePrice == 0 {
 		log.Printf(
@@ -397,7 +251,7 @@ func (c *client) placeBuyOrder(t time.Time) {
 		log.Printf("unable to place buy order @ %v: %v\n", t, err)
 		return
 	}
-	c.purchases = append(c.purchases, &Purchase{
+	c.purchases = append(c.purchases, &purchase.Purchase{
 		BuyOrder: o,
 	})
 	log.Printf("buy order placed @ %v:\n%+v\n", t, o)
@@ -416,8 +270,8 @@ func (c *client) closeOutTrading() {
 
 // todaysCompletedPurchases returns all purchases in which the sell was
 // completed today in PST.
-func (c *client) todaysCompletedPurchases() []*Purchase {
-	var today []*Purchase
+func (c *client) todaysCompletedPurchases() []*purchase.Purchase {
+	var today []*purchase.Purchase
 	todayYearDay := time.Now().In(PST).YearDay()
 	for _, p := range c.purchases {
 		if !p.SellFilled() {
