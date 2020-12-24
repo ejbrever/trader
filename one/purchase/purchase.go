@@ -158,3 +158,12 @@ func (p *Purchase) NotSelling() bool {
 	}
 	return endedUnsuccessfullyStates[p.SellOrder.Status]
 }
+
+func init() {
+	var err error
+	PST, err = time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		fmt.Printf("unable to load timezone location: %v", err)
+		os.Exit(1)
+	}
+}
