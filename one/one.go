@@ -494,8 +494,8 @@ func main() {
 }
 
 func init() {
-	os.Setenv(common.EnvApiKeyID, "PKMYQANTSQ1QRQW9FSO6")
-	os.Setenv(common.EnvApiSecretKey, "d5T9VG79siGgofz8snYZDX85wLnVQHtPDQfvRMET")
+	os.Setenv(common.EnvApiKeyID, "PKACWN8W5WFG2M5LNPEQ")
+	os.Setenv(common.EnvApiSecretKey, "1VzEyqvSO60TLo3X2jlUEiNm8IQe8S3vWeOnZVs3")
 
 	log.Printf("Running w/ credentials [%v %v]\n", common.Credentials().ID, common.Credentials().Secret)
 
