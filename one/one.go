@@ -277,7 +277,7 @@ func (c *client) todaysCompletedPurchases() []*purchase.Purchase {
 		if !p.SellFilled() {
 			continue
 		}
-		if p.GetSellFilledYearDay() != todayYearDay {
+		if p.GetSellFilledYearDay(PST) != todayYearDay {
 			continue
 		}
 		today = append(today, p)

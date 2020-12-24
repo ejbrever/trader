@@ -8,9 +8,6 @@ import (
 )
 
 var (
-  // PST is the timezone for the Pacific time.
-  PST *time.Location
-
 	// orderCompletedStates are states when an order receives no further updates.
 	orderCompletedStates = map[string]bool{
 		"filled": true,
@@ -114,9 +111,9 @@ func (p *Purchase) SellInProgress() bool {
 }
 
 // GetSellFilledYearDay returns the year day in PST that the sell was filled.
-func (p *Purchase) GetSellFilledYearDay() int {
+func (p *Purchase) GetSellFilledYearDay(tz *time.Location) int {
 	if p.SellFilledYearDay == 0 {
-		p.SellFilledYearDay = p.SellOrder.FilledAt.In(PST).YearDay()
+		p.SellFilledYearDay = p.SellOrder.FilledAt.In(tz).YearDay()
 	}
 	return p.SellFilledYearDay
 }
@@ -157,13 +154,4 @@ func (p *Purchase) NotSelling() bool {
 		return true
 	}
 	return endedUnsuccessfullyStates[p.SellOrder.Status]
-}
-
-func init() {
-	var err error
-	PST, err = time.LoadLocation("America/Los_Angeles")
-	if err != nil {
-		fmt.Printf("unable to load timezone location: %v", err)
-		os.Exit(1)
-	}
 }
