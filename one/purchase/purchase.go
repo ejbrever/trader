@@ -1,11 +1,16 @@
-// Package purchase stores and manages purchases. 
+// Package purchase stores and manages purchases.
 package purchase
 
 import (
+  "time"
+
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 )
 
 var (
+  // PST is the timezone for the Pacific time.
+  PST *time.Location
+
 	// orderCompletedStates are states when an order receives no further updates.
 	orderCompletedStates = map[string]bool{
 		"filled": true,
