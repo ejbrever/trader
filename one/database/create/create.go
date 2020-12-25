@@ -63,7 +63,7 @@ func main() {
       updated_at datetime default CURRENT_TIMESTAMP
     )`
     ctx, cancelFunc = context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancelfunc()
+    defer cancelFunc()
     res, err := db.ExecContext(ctx, query)
     if err != nil {
       log.Printf("unable to create table: %v", err)
