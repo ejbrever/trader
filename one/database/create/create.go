@@ -64,7 +64,7 @@ func main() {
     )`
     ctx, cancelFunc = context.WithTimeout(context.Background(), 5*time.Second)
     defer cancelFunc()
-    res, err := db.ExecContext(ctx, query)
+    res, err = db.ExecContext(ctx, query)
     if err != nil {
       log.Printf("unable to create table: %v", err)
       return
