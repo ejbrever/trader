@@ -71,6 +71,44 @@ func (c *Client) Insert(p *purchase.Purchase) error {
 	return nil
 }
 
+// Update updates purchase data into the table.
+func (c *Client) Update(p *purchase.Purchase) error {
+	if p.ID == 0 {
+		return fmt.Errorf("purchase must have a preexisting ID")
+	}
+
+	buyBytes, err := json.Marshal(p.BuyOrder)
+	if err != nil {
+		return fmt.Errorf("unable to marshal buy order: %v", err)
+	}
+
+	sellBytes, err := json.Marshal(p.SellOrder)
+	if err != nil {
+		return fmt.Errorf("unable to marshal sell order: %v", err)
+	}
+
+	query := `UPDATE trader_one
+  SET
+    buy_order = ?,
+    sell_order = ?,
+    updated_at = NOW()
+  WHERE
+    id = ?`
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFunc()
+	stmt, err := c.db.PrepareContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("unable to prepare SQL statement: %v", err)
+	}
+	defer stmt.Close()
+
+	_, err := stmt.ExecContext(ctx, string(buyBytes), string(sellBytes), p.ID)
+	if err != nil {
+		return fmt.Errorf("unable to update row: %v", err)
+	}
+	return nil
+}
+
 // Purchases retrieves all purchases stored in the database.
 // TODO(ejbrever): Argument to filter by date(s).
 func (c *Client) Purchases() ([]*purchase.Purchase, error) {
