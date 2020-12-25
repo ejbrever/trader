@@ -36,6 +36,10 @@ func New() (*Client, error) {
 
 // Insert inserts purchase data into the table.
 func (c *Client) Insert(p *purchase.Purchase) error {
+	if p.ID != 0 {
+		return fmt.Errorf("purchase cannot have a preexisting ID")
+	}
+
 	buyBytes, err := json.Marshal(p.BuyOrder)
 	if err != nil {
 		return fmt.Errorf("unable to marshal buy order: %v", err)
