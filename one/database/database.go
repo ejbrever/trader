@@ -87,7 +87,8 @@ func (c *Client) Purchases() ([]*purchase.Purchase, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to scan row: %v", err)
 		}
-		var buyOrder, sellOrder *alpaca.Order
+		sellOrder := &alpaca.Order{}
+		buyOrder := &alpaca.Order{}
 		if err = json.Unmarshal([]byte(buyOrderJSON), buyOrder); err != nil {
 			return nil, fmt.Errorf("unable to unmarshal %q: %v", buyOrderJSON, err)
 		}
