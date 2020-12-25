@@ -1,12 +1,4 @@
-// Creates a new database.
-// After creating the database, this mysql command can be used to create the
-// table for trader-one:
-// CREATE TABLE IF NOT EXISTS trader-one(
-//   id int primary key auto_increment,
-//   buy_order JSON,
-//   sell_order JSON,
-//   created_at datetime default CURRENT_TIMESTAMP,
-//   updated_at datetime default CURRENT_TIMESTAMP)
+// Creates a new database and table for trader-one.
 package main
 
 import (
@@ -55,7 +47,7 @@ func main() {
     }
     defer db.Close()
 
-    query := `CREATE TABLE IF NOT EXISTS trader-one(
+    query := `CREATE TABLE IF NOT EXISTS trader_one(
       id int primary key auto_increment,
       buy_order json,
       sell_order json,
