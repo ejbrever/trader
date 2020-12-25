@@ -1,4 +1,12 @@
 // Creates a new database.
+// After creating the database, this mysql command can be used to create the
+// table for trader-one:
+// CREATE TABLE IF NOT EXISTS trader-one(
+//   id int primary key auto_increment,
+//   buy_order JSON,
+//   sell_order JSON,
+//   created_at datetime default CURRENT_TIMESTAMP,
+//   updated_at datetime default CURRENT_TIMESTAMP)
 package main
 
 import (
@@ -38,12 +46,6 @@ func main() {
         log.Printf("unable to create database: %v", err)
         return
     }
-    rowsAffected, err := res.RowsAffected()
-    if err != nil {
-        log.Printf("unable to fetch rows: %v", err)
-        return
-    }
-    log.Printf("rows affected: %d\n", rowsAffected)
 
     db.Close()
     db, err = sql.Open("mysql", dsn(dbName))
@@ -52,6 +54,21 @@ func main() {
         return
     }
     defer db.Close()
+
+    query := `CREATE TABLE IF NOT EXISTS trader-one(
+      id int primary key auto_increment,
+      buy_order json,
+      sell_order json,
+      created_at datetime default CURRENT_TIMESTAMP,
+      updated_at datetime default CURRENT_TIMESTAMP
+    )`
+    ctx, cancelFunc = context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancelfunc()
+    res, err := db.ExecContext(ctx, query)
+    if err != nil {
+      log.Printf("unable to create table: %v", err)
+      return err
+    }
 
     db.SetMaxOpenConns(3)
     db.SetMaxIdleConns(5)
