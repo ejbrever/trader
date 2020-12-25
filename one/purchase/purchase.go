@@ -42,6 +42,7 @@ var (
 
 // Purchase stores information related to a purchase.
 type Purchase struct {
+  ID int64  // ID is a unique ID of Purchase and is stored in the database.
 	BuyOrder  *alpaca.Order
 	SellOrder *alpaca.Order
 	SellFilledYearDay int  // The day of the year that the sale is made.
