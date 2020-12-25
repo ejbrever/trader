@@ -11,6 +11,7 @@ import (
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/ejbrever/trader/one/purchase"
 
+	// MySQL package.
 	_ "github.com/go-sql-driver/mysql"
 )
 
