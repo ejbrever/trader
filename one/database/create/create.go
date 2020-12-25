@@ -41,7 +41,7 @@ func main() {
 
     ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancelFunc()
-    res, err := db.ExecContext(ctx, fmt.Sprintf(createDatabaseCmd, dbName))
+    _, err := db.ExecContext(ctx, fmt.Sprintf(createDatabaseCmd, dbName))
     if err != nil {
         log.Printf("unable to create database: %v", err)
         return
@@ -64,7 +64,7 @@ func main() {
     )`
     ctx, cancelFunc = context.WithTimeout(context.Background(), 5*time.Second)
     defer cancelFunc()
-    res, err = db.ExecContext(ctx, query)
+    _, err = db.ExecContext(ctx, query)
     if err != nil {
       log.Printf("unable to create table: %v", err)
       return
