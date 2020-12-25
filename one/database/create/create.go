@@ -12,8 +12,8 @@ import (
 )
 
 const (
-    username = "root"
-    password = ""
+    username = "one"
+    password = "password"
     hostname = "127.0.0.1:3306"
     dbName   = "one"
     createDatabaseCmd = "CREATE DATABASE IF NOT EXISTS %s"
