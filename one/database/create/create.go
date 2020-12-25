@@ -67,7 +67,7 @@ func main() {
     res, err := db.ExecContext(ctx, query)
     if err != nil {
       log.Printf("unable to create table: %v", err)
-      return err
+      return
     }
 
     db.SetMaxOpenConns(3)
