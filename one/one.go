@@ -7,7 +7,6 @@ import (
 	"os"
 	"time"
 
-
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
 	"github.com/ejbrever/trader/one/purchase"
@@ -32,12 +31,15 @@ const (
 
 	// timeBeforeMarketCloseToSell is the duration of time before market close
 	// that all positions should be closed out.
-	timeBeforeMarketCloseToSell = 1*time.Hour
+	timeBeforeMarketCloseToSell = 1 * time.Hour
 )
 
 var (
 	// PST is the timezone for the Pacific time.
 	PST *time.Location
+
+	// Is trading currently allowed by the algorithm?
+	trading bool
 )
 
 type client struct {
@@ -45,7 +47,6 @@ type client struct {
 	alpacaClient     *alpaca.Client
 	purchases        []*purchase.Purchase
 	stockSymbol      string
-	trading          bool  // Is trading currently allowed by the algo?
 }
 
 func new(stockSymbol string, allowedPurchases int) *client {
@@ -125,7 +126,7 @@ func (c *client) run(t time.Time) {
 func (c *client) cancelOutdatedOrders() {
 	now := time.Now()
 	for _, o := range c.inProgressBuyOrders() {
-		if now.Sub(o.BuyOrder.CreatedAt) > 5 * time.Minute {
+		if now.Sub(o.BuyOrder.CreatedAt) > 5*time.Minute {
 			if err := c.alpacaClient.CancelOrder(o.BuyOrder.ID); err != nil {
 				log.Printf("unable to cancel %q: %v", o.BuyOrder.ID, err)
 			}
@@ -154,9 +155,9 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 	// Take a profit as soon as 0.2% profit can be achieved.
 	profitLimitPrice := decimal.NewFromFloat(basePrice * 1.002)
 	// Sell is 0.12% lower than base price (i.e. AvgFillPrice).
-	stopPrice := decimal.NewFromFloat(basePrice - basePrice * .0012)
+	stopPrice := decimal.NewFromFloat(basePrice - basePrice*.0012)
 	// Set a limit on the sell price at 0.17% lower than the base price.
-	lossLimitPrice := decimal.NewFromFloat(basePrice - basePrice * .0017)
+	lossLimitPrice := decimal.NewFromFloat(basePrice - basePrice*.0017)
 
 	var err error
 	p.SellOrder, err = c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
@@ -165,12 +166,12 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 		Type:        alpaca.Limit,
 		Qty:         decimal.NewFromFloat(purchaseQty),
 		TimeInForce: alpaca.GTC,
-		OrderClass: alpaca.Oco,
+		OrderClass:  alpaca.Oco,
 		TakeProfit: &alpaca.TakeProfit{
 			LimitPrice: &profitLimitPrice,
 		},
 		StopLoss: &alpaca.StopLoss{
-			StopPrice: &stopPrice,
+			StopPrice:  &stopPrice,
 			LimitPrice: &lossLimitPrice,
 		},
 	})
@@ -226,7 +227,7 @@ func (c *client) buyEvent(t time.Time) bool {
 
 // allPositiveImprovements returns true if each bar improves over the last.
 func (c *client) allPositiveImprovements(bars []alpaca.Bar) bool {
-	for i, b := range bars{
+	for i, b := range bars {
 		if i == 0 {
 			continue
 		}
@@ -266,27 +267,6 @@ func (c *client) closeOutTrading() {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
 	log.Printf("My trading is over for a bit!")
-}
-
-// todaysCompletedPurchases returns all purchases in which the sell was
-// completed today in PST.
-func (c *client) todaysCompletedPurchases() []*purchase.Purchase {
-	var today []*purchase.Purchase
-	todayYearDay := time.Now().In(PST).YearDay()
-	for _, p := range c.purchases {
-		if !p.SellFilled() {
-			continue
-		}
-		if p.GetSellFilledYearDay(PST) != todayYearDay {
-			continue
-		}
-		today = append(today, p)
-	}
-	return today
-}
-
-type webserver struct {
-	client *client
 }
 
 // order returns details for a given order. If the order was replaced, it
@@ -332,17 +312,14 @@ func (c *client) updateOrders() {
 	}
 }
 
-// startServer starts a web server to display account data.
-func startServer(client *client) {
-	w := &webserver{
-		client: client,
-	}
+// startWebserver starts a web server to display job information.
+func startWebserver() {
 	mux := http.NewServeMux()
-	mux.Handle("/", w)
+	mux.HandleFunc("/", serveHTTP)
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		port = "8081"
 		log.Printf("defaulting to port %s", port)
 	}
 
@@ -352,87 +329,16 @@ func startServer(client *client) {
 	}
 }
 
-func (ws *webserver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if ws.client.trading {
+func serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if trading {
 		fmt.Fprintf(w, "Trader One is running and trading!\n\n")
 	} else {
 		fmt.Fprintf(w, "Trader One is running, but not currently trading.\n\n")
 	}
-
-
-	a, err := ws.client.alpacaClient.GetAccount()
-	if err != nil {
-		fmt.Fprintf(w, "unable to get account info: %v", err)
-		return
-	}
-	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.StringFixed(2))
-	fmt.Fprintf(w, "Cash: $%v\n", a.Cash.StringFixed(2))
-	fmt.Fprintf(w, "Purchases open: %v/%v\n",
-		len(ws.client.inProgressPurchases()), ws.client.allowedPurchases)
-
-	positions, err := ws.client.alpacaClient.ListPositions()
-	if err != nil {
-		fmt.Fprintf(w, "unable to get account positions: %v", err)
-		return
-	}
-	fmt.Fprintf(w, "\n\nCurrent Positions\n")
-	for _, p := range positions {
-		fmt.Fprintf(w, "\nSymbol: %v\n", p.Symbol)
-		fmt.Fprintf(w, "Qty: %v\n", p.Qty)
-		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.StringFixed(2))
-		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.StringFixed(2))
-		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.StringFixed(2))
-	}
-
-	timePeriod := "14D"
-	timeFrame := alpaca.Day1
-	history, err := ws.client.alpacaClient.GetPortfolioHistory(
-		&timePeriod, &timeFrame, nil, false)
-	if err != nil {
-		fmt.Fprintf(w, "unable to get daily account history: %v", err)
-		return
-	}
-	fmt.Fprintf(w, "\n\nHistory - 14 Days\n")
-	for i, t := range history.Timestamp {
-		fmt.Fprintf(w, "%v: $%v, Profit: $%v [%%%v]\n",
-			time.Unix(t, 0),
-			history.Equity[i],
-			history.ProfitLoss[i],
-			history.ProfitLossPct[i].Mul(decimal.NewFromInt(100)).Round(3),
-		)
-	}
-
-	fmt.Fprintf(w, "\n\nToday's Completed Wins/Losses\n")
-	for _, p := range ws.client.todaysCompletedPurchases() {
-		fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] \n",
-			p.SellOrder.FilledAt.In(PST),
-			p.SellOrder.Symbol,
-			p.SellOrder.Qty,
-			p.BuyOrder.FilledAvgPrice.StringFixed(2),
-			p.SellOrder.FilledAvgPrice.StringFixed(2),
-		)
-	}
-
-	activities, err := ws.client.alpacaClient.GetAccountActivities(nil, nil)
-	if err != nil {
-		fmt.Fprintf(w, "unable to get account activities: %v", err)
-		return
-	}
-	fmt.Fprintf(w, "\n\nRecent Activity\n")
-	for _, a := range activities {
-		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
-			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
-	}
-
-	fmt.Fprintf(w, "\n\nDeep dive of purchases\n")
-	for _, p := range ws.client.purchases {
-		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
-		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
-	}
 }
 
 func setupLogging() *os.File {
-	f, err := os.OpenFile("trader-one-logs", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
+	f, err := os.OpenFile("trader-one-logs", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
@@ -452,7 +358,7 @@ func main() {
 	c := new(stockSymbol, maxAllowedPurchases)
 	log.Printf("trader one is now online!")
 
-	go startServer(c)
+	go startWebserver()
 
 	ticker := time.NewTicker(timeBetweenAction)
 	defer ticker.Stop()
@@ -476,16 +382,16 @@ func main() {
 			switch {
 			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
 				log.Printf("market is closing soon")
-				c.trading = false
+				trading = false
 				c.closeOutTrading()
 				time.Sleep(timeBeforeMarketCloseToSell)
 				continue
 			case !clock.IsOpen:
-				c.trading = false
+				trading = false
 				log.Printf("market is not open :(")
 				continue
 			default:
-				c.trading = true
+				trading = true
 				log.Printf("market is open!")
 			}
 			go c.run(t)
