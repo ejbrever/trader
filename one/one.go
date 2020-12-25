@@ -9,6 +9,7 @@ import (
 
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/alpacahq/alpaca-trade-api-go/common"
+	"github.com/ejbrever/trader/one/database"
 	"github.com/ejbrever/trader/one/purchase"
 	"github.com/shopspring/decimal"
 )
@@ -45,16 +46,28 @@ var (
 type client struct {
 	allowedPurchases int
 	alpacaClient     *alpaca.Client
+	dbClient         *database.Client
 	purchases        []*purchase.Purchase
 	stockSymbol      string
 }
 
-func new(stockSymbol string, allowedPurchases int) *client {
+func new(stockSymbol string, allowedPurchases int) (*client, error) {
+	db, err := database.New()
+	if err != nil {
+		return nil, fmt.Errorf("unable to open db: %v", err)
+	}
+	// TODO(ejbrever) This needs to be all of TODAYS purchases only.
+	purchases, err := db.Purchases()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get all purchases: %v", err)
+	}
 	return &client{
 		allowedPurchases: allowedPurchases,
 		alpacaClient:     alpaca.NewClient(common.Credentials()),
+		dbClient:         db,
+		purchases:        purchases,
 		stockSymbol:      stockSymbol,
-	}
+	}, nil
 }
 
 // boughtNotSelling returns a slice of purchases that have been bought and
@@ -160,7 +173,7 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 	lossLimitPrice := decimal.NewFromFloat(basePrice - basePrice*.0017)
 
 	var err error
-	p.SellOrder, err = c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
+	sellOrder, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
 		Side:        alpaca.Sell,
 		AssetKey:    &c.stockSymbol,
 		Type:        alpaca.Limit,
@@ -180,7 +193,10 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 			err, p.BuyOrder, p.SellOrder)
 		return
 	}
+	p.SellOrder = sellOrder
 	log.Printf("sell order placed:\n%+v\n", p.SellOrder)
+
+	// TODO(ejbrever) Database needs an update func here.
 }
 
 // Buy side:
@@ -194,7 +210,7 @@ func (c *client) buy(t time.Time) {
 	if !c.buyEvent(t) {
 		return
 	}
-	c.placeBuyOrder(t)
+	c.placeBuyOrder()
 }
 
 // buyEvent determines if this time is a buy event.
@@ -238,24 +254,28 @@ func (c *client) allPositiveImprovements(bars []alpaca.Bar) bool {
 	return true
 }
 
-func (c *client) placeBuyOrder(t time.Time) {
+func (c *client) placeBuyOrder() {
 	o, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
-		AccountID:     "",
-		AssetKey:      &c.stockSymbol,
-		Qty:           decimal.NewFromFloat(purchaseQty),
-		Side:          alpaca.Buy,
-		Type:          alpaca.Market,
-		TimeInForce:   alpaca.Day,
-		ClientOrderID: fmt.Sprintf("one:%v", t),
+		AccountID:   "",
+		AssetKey:    &c.stockSymbol,
+		Qty:         decimal.NewFromFloat(purchaseQty),
+		Side:        alpaca.Buy,
+		Type:        alpaca.Market,
+		TimeInForce: alpaca.Day,
 	})
 	if err != nil {
-		log.Printf("unable to place buy order @ %v: %v\n", t, err)
+		log.Printf("unable to place buy order: %v", err)
 		return
 	}
-	c.purchases = append(c.purchases, &purchase.Purchase{
+	p := &purchase.Purchase{
 		BuyOrder: o,
-	})
-	log.Printf("buy order placed @ %v:\n%+v\n", t, o)
+	}
+	c.purchases = append(c.purchases, p)
+	log.Printf("buy order placed:\n%+v", o)
+
+	if err := c.dbClient.Insert(p); err != nil {
+		log.Printf("unable to insert buy order in database: %v", err)
+	}
 }
 
 // closeOutTrading closes out all trading for the day.
@@ -266,7 +286,7 @@ func (c *client) closeOutTrading() {
 	if err := c.alpacaClient.CloseAllPositions(); err != nil {
 		log.Printf("unable to close all positions: %v\n", err)
 	}
-	log.Printf("My trading is over for a bit!")
+	log.Printf("My trading is over for a bit and all trading is closed out!")
 }
 
 // order returns details for a given order. If the order was replaced, it
@@ -302,6 +322,7 @@ func (c *client) updateOrders() {
 			continue
 		}
 		o.BuyOrder = order
+		// TODO(ejbrever) Database update here.
 	}
 	for _, o := range c.inProgressSellOrders() {
 		order := c.order(o.SellOrder.ID)
@@ -309,6 +330,7 @@ func (c *client) updateOrders() {
 			continue
 		}
 		o.SellOrder = order
+		// TODO(ejbrever) Database update here.
 	}
 }
 
@@ -352,13 +374,17 @@ func closeLogging(f *os.File) {
 }
 
 func main() {
+	go startWebserver()
+
 	f := setupLogging()
 	defer closeLogging(f)
 
-	c := new(stockSymbol, maxAllowedPurchases)
+	c, err := new(stockSymbol, maxAllowedPurchases)
+	if err != nil {
+		log.Printf("unable to start trader-one: %v", err)
+		return
+	}
 	log.Printf("trader one is now online!")
-
-	go startWebserver()
 
 	ticker := time.NewTicker(timeBetweenAction)
 	defer ticker.Stop()
