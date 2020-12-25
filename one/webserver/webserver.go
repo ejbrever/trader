@@ -71,6 +71,23 @@ func (ws *Webserver) inProgressPurchases(allPurchases []*purchase.Purchase) []*p
 	return inProgress
 }
 
+// todaysCompletedPurchases returns all purchases in which the sell was
+// completed today in PST.
+func (ws *Webserver) todaysCompletedPurchases(allPurchases []*purchase.Purchase) []*purchase.Purchase {
+	var today []*purchase.Purchase
+	todayYearDay := time.Now().In(PST).YearDay()
+	for _, p := range allPurchases {
+		if !p.SellFilled() {
+			continue
+		}
+		if p.GetSellFilledYearDay(PST) != todayYearDay {
+			continue
+		}
+		today = append(today, p)
+	}
+	return today
+}
+
 // main serves information for the main page.
 func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 	allPurchases, err := ws.db.Purchases()
@@ -121,16 +138,15 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "\n\nToday's Completed Wins/Losses\n")
-	// This can be based on database now!
-	// for _, p := range ws.todaysCompletedPurchases() {
-	// 	fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] \n",
-	// 		p.SellOrder.FilledAt.In(PST),
-	// 		p.SellOrder.Symbol,
-	// 		p.SellOrder.Qty,
-	// 		p.BuyOrder.FilledAvgPrice.StringFixed(2),
-	// 		p.SellOrder.FilledAvgPrice.StringFixed(2),
-	// 	)
-	// }
+	for _, p := range ws.todaysCompletedPurchases(allPurchases) {
+		fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] \n",
+			p.SellOrder.FilledAt.In(PST),
+			p.SellOrder.Symbol,
+			p.SellOrder.Qty,
+			p.BuyOrder.FilledAvgPrice.StringFixed(2),
+			p.SellOrder.FilledAvgPrice.StringFixed(2),
+		)
+	}
 
 	activities, err := ws.alpacaClient.GetAccountActivities(nil, nil)
 	if err != nil {
@@ -145,11 +161,10 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "\n\nDeep dive of purchases\n")
 
-	// Switch to database.
-	// for _, p := range ws.purchases {
-	// 	fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
-	// 	fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
-	// }
+	for _, p := range allPurchases {
+		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
+		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
+	}
 }
 
 func main() {
