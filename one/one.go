@@ -201,9 +201,7 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 	}
 }
 
-// Buy side:
-// Look at most recent two 1sec Bars.
-// If positive direction, buy.
+// Buy side: Look at most recent three 1 minute bars. If positive direction, buy.
 func (c *client) buy(t time.Time) {
 	if len(c.inProgressPurchases()) >= c.allowedPurchases {
 		log.Printf("allowable purchases used @ %v\n", t)
@@ -236,6 +234,18 @@ func (c *client) buyEvent(t time.Time) bool {
 			t, bars)
 		return false
 	}
+	a, err := c.alpacaClient.GetAccount()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get account details: %v", err)
+	}
+	// neededCash is the amount of money needed to perform a purchase, with an
+	// extra 20% buffer.
+	neededCash := bars[0].Close.Mul(decimal.NewFromFloat(float64(purchaseQty) * 1.2))
+	if a.Cash.LessThan(neededCash) {
+		log.Printf("not enough cash to perform a trade, have %%%v, need %%%v", a.Cash, neededCash)
+		return false
+	}
+
 	if !c.allPositiveImprovements(bars) {
 		log.Printf("non-positive improvements")
 		return false
