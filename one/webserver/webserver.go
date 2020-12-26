@@ -88,17 +88,38 @@ func (ws *Webserver) todaysCompletedPurchases(allPurchases []*purchase.Purchase)
 	return today
 }
 
+// openSellOrders returns a slice of open sell orders.
+func (ws *Webserver) openSellOrders() ([]*alpaca.Order, error) {
+	openStatus := "open"
+	now := time.Now()
+	limit := 500
+	nested := false
+	orders, err := ws.alpacaClient.ListOrders(&openStatus, &now, &limit, &nested)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get orders: %v", err)
+	}
+
+	var sellOrders []*alpaca.Order
+	for _, o := range orders {
+		if o.Side != alpaca.Sell {
+			continue
+		}
+		sellOrders = append(sellOrders, &o)
+	}
+	return sellOrders, nil
+}
+
 // main serves information for the main page.
 func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 	allPurchases, err := ws.db.Purchases()
 	if err != nil {
-		fmt.Fprintf(w, "unable to get all purchases from database: %v", err)
+		fmt.Fprintf(w, "unable to get all purchases from database: %v\n", err)
 		return
 	}
 
 	a, err := ws.alpacaClient.GetAccount()
 	if err != nil {
-		fmt.Fprintf(w, "unable to get account info: %v", err)
+		fmt.Fprintf(w, "unable to get account info: %v\n", err)
 		return
 	}
 	fmt.Fprintf(w, "Equity: $%v\n", a.Equity.StringFixed(2))
@@ -107,16 +128,25 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 
 	positions, err := ws.alpacaClient.ListPositions()
 	if err != nil {
-		fmt.Fprintf(w, "unable to get account positions: %v", err)
+		fmt.Fprintf(w, "unable to get account positions: %v\n", err)
 		return
 	}
-	fmt.Fprintf(w, "\n\nCurrent Positions\n")
+	fmt.Fprintf(w, "\n\nCurrent Held Positions\n")
 	for _, p := range positions {
 		fmt.Fprintf(w, "\nSymbol: %v\n", p.Symbol)
 		fmt.Fprintf(w, "Qty: %v\n", p.Qty)
 		fmt.Fprintf(w, "CurrentPrice: $%v\n", p.CurrentPrice.StringFixed(2))
 		fmt.Fprintf(w, "Average entry price: $%v\n", p.EntryPrice.StringFixed(2))
 		fmt.Fprintf(w, "Market value: $%v\n", p.MarketValue.StringFixed(2))
+	}
+
+	fmt.Fprintf(w, "\n\nOpen Sell Orders\n")
+	sellOrders, err := ws.openSellOrders()
+	if err != nil {
+		fmt.Fprintf(w, "unable to get sell orders: %v\n", err)
+	}
+	for _, o := range sellOrders {
+		fmt.Printf("%v [%v] (%v), Stop Price ($%v), Limit Price ($%v)\n", o.Symbol, o.Qty, o.Type, o.StopPrice.String(), o.LimitPrice.String())
 	}
 
 	timePeriod := "14D"
@@ -160,7 +190,6 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "\n\nDeep dive of purchases\n")
-
 	for _, p := range allPurchases {
 		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
 		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
