@@ -196,7 +196,9 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 	p.SellOrder = sellOrder
 	log.Printf("sell order placed:\n%+v\n", p.SellOrder)
 
-	// TODO(ejbrever) Database needs an update func here.
+	if err := c.dbClient.Update(p); err != nil {
+		log.Printf("unable to update for sell order:%v\n%+v", err, p)
+	}
 }
 
 // Buy side:
@@ -294,7 +296,7 @@ func (c *client) closeOutTrading() {
 func (c *client) order(id string) *alpaca.Order {
 	order, err := c.alpacaClient.GetOrder(id)
 	if err != nil {
-		fmt.Printf("GetOrder %q error: %v", id, err)
+		log.Printf("GetOrder %q error: %v", id, err)
 		return nil
 	}
 	if order == nil {
@@ -303,7 +305,7 @@ func (c *client) order(id string) *alpaca.Order {
 	if order.ReplacedBy != nil {
 		replacedOrder, err := c.alpacaClient.GetOrder(*order.ReplacedBy)
 		if err != nil {
-			fmt.Printf("Replaced GetOrder %q (original ID: %q) error: %v", *order.ReplacedBy, id, err)
+			log.Printf("Replaced GetOrder %q (original ID: %q) error: %v", *order.ReplacedBy, id, err)
 			return nil
 		}
 		if replacedOrder == nil {
@@ -322,7 +324,9 @@ func (c *client) updateOrders() {
 			continue
 		}
 		o.BuyOrder = order
-		// TODO(ejbrever) Database update here.
+		if err := c.dbClient.Update(o); err != nil {
+			log.Printf("unable to update buy order:%v\n%+v", err, o)
+		}
 	}
 	for _, o := range c.inProgressSellOrders() {
 		order := c.order(o.SellOrder.ID)
@@ -330,7 +334,9 @@ func (c *client) updateOrders() {
 			continue
 		}
 		o.SellOrder = order
-		// TODO(ejbrever) Database update here.
+		if err := c.dbClient.Update(o); err != nil {
+			log.Printf("unable to update sell order:%v\n%+v", err, o)
+		}
 	}
 }
 
