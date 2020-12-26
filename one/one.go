@@ -236,12 +236,13 @@ func (c *client) buyEvent(t time.Time) bool {
 	}
 	a, err := c.alpacaClient.GetAccount()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get account details: %v", err)
+		log.Printf("unable to get account details to check for needed cash: %v", err)
+		return false
 	}
 	// neededCash is the amount of money needed to perform a purchase, with an
 	// extra 20% buffer.
-	neededCash := bars[0].Close.Mul(decimal.NewFromFloat(float64(purchaseQty) * 1.2))
-	if a.Cash.LessThan(neededCash) {
+	neededCash := bars[0].Close * purchaseQty * 1.2
+	if a.Cash.LessThan(decimal.NewFromFloat32(neededCash)) {
 		log.Printf("not enough cash to perform a trade, have %%%v, need %%%v", a.Cash, neededCash)
 		return false
 	}
