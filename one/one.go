@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,25 +15,16 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const (
-	// purchaseQty is the quantity of shares to purchase with each buy order.
-	purchaseQty = 10
-
-	// timeToTrade is the time that the service should continue trying to trade.
-	timeToTrade = 1000 * time.Hour
-
-	// timeBetweenAction is the time between each attempt to buy or sell.
-	timeBetweenAction = 30 * time.Second
-
-	// stockSymbol is the stock to buy an sell.
-	stockSymbol = "SPY"
-
-	// maxAllowedPurchases is the maximum number of allowed purchases.
-	maxAllowedPurchases = 20
-
-	// timeBeforeMarketCloseToSell is the duration of time before market close
-	// that all positions should be closed out.
-	timeBeforeMarketCloseToSell = 1 * time.Hour
+var (
+	apiEndpoint                 = flag.String("api_endpoint", "https://paper-api.alpaca.markets", "The REST API endpoint for Alpaca.")
+	apiKeyID                    = flag.String("api_key_id", "", "The Alpaca API Key ID.")
+	apiSecretKey                = flag.String("api_secret_key", "", "The Alpaca API Secret Key.")
+	durationBetweenAction       = flag.Duration("duration_between_action", 30*time.Second, "The time between each attempt to buy or sell.")
+	durationToRun               = flag.Duration("duration_to_run", 10*time.Second, "The time that the job should run.")
+	maxConcurrentPurchases      = flag.Int("max_concurrent_purchases", 0, "The maximum number of allowed purchases at a given time.")
+	purchaseQty                 = flag.Float64("purchase_quanity", 0, "Quantity of shares to purchase with each buy order.")
+	stockSymbol                 = flag.String("stock_symbol", "", "The stock to buy an sell.")
+	timeBeforeMarketCloseToSell = flag.Duration("time_before_market_close_to_sell", 1*time.Hour, "The time before market close that all positions should be closed out.")
 )
 
 var (
@@ -44,14 +36,14 @@ var (
 )
 
 type client struct {
-	allowedPurchases int
-	alpacaClient     *alpaca.Client
-	dbClient         *database.Client
-	purchases        []*purchase.Purchase
-	stockSymbol      string
+	concurrentPurchases int
+	alpacaClient        *alpaca.Client
+	dbClient            *database.Client
+	purchases           []*purchase.Purchase
+	stockSymbol         string
 }
 
-func new(stockSymbol string, allowedPurchases int) (*client, error) {
+func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 	db, err := database.New()
 	if err != nil {
 		return nil, fmt.Errorf("unable to open db: %v", err)
@@ -62,11 +54,11 @@ func new(stockSymbol string, allowedPurchases int) (*client, error) {
 		return nil, fmt.Errorf("unable to get all purchases: %v", err)
 	}
 	return &client{
-		allowedPurchases: allowedPurchases,
-		alpacaClient:     alpaca.NewClient(common.Credentials()),
-		dbClient:         db,
-		purchases:        purchases,
-		stockSymbol:      stockSymbol,
+		concurrentPurchases: concurrentPurchases,
+		alpacaClient:        alpaca.NewClient(common.Credentials()),
+		dbClient:            db,
+		purchases:           purchases,
+		stockSymbol:         stockSymbol,
 	}, nil
 }
 
@@ -177,7 +169,7 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 		Side:        alpaca.Sell,
 		AssetKey:    &c.stockSymbol,
 		Type:        alpaca.Limit,
-		Qty:         decimal.NewFromFloat(purchaseQty),
+		Qty:         decimal.NewFromFloat(*purchaseQty),
 		TimeInForce: alpaca.GTC,
 		OrderClass:  alpaca.Oco,
 		TakeProfit: &alpaca.TakeProfit{
@@ -203,7 +195,7 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 
 // Buy side: Look at most recent three 1 minute bars. If positive direction, buy.
 func (c *client) buy(t time.Time) {
-	if len(c.inProgressPurchases()) >= c.allowedPurchases {
+	if len(c.inProgressPurchases()) >= c.concurrentPurchases {
 		log.Printf("allowable purchases used @ %v\n", t)
 		return
 	}
@@ -241,7 +233,7 @@ func (c *client) buyEvent(t time.Time) bool {
 	}
 	// neededCash is the amount of money needed to perform a purchase, with an
 	// extra 20% buffer.
-	neededCash := bars[0].Close * purchaseQty * 1.2
+	neededCash := bars[0].Close * float32(*purchaseQty) * 1.2
 	if a.Cash.LessThan(decimal.NewFromFloat32(neededCash)) {
 		log.Printf("not enough cash to perform a trade, have %%%v, need %%%v", a.Cash, neededCash)
 		return false
@@ -271,7 +263,7 @@ func (c *client) placeBuyOrder() {
 	o, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
 		AccountID:   "",
 		AssetKey:    &c.stockSymbol,
-		Qty:         decimal.NewFromFloat(purchaseQty),
+		Qty:         decimal.NewFromFloat(*purchaseQty),
 		Side:        alpaca.Buy,
 		Type:        alpaca.Market,
 		TimeInForce: alpaca.Day,
@@ -396,18 +388,18 @@ func main() {
 	f := setupLogging()
 	defer closeLogging(f)
 
-	c, err := new(stockSymbol, maxAllowedPurchases)
+	c, err := new(*stockSymbol, *maxConcurrentPurchases)
 	if err != nil {
 		log.Printf("unable to start trader-one: %v", err)
 		return
 	}
 	log.Printf("trader one is now online!")
 
-	ticker := time.NewTicker(timeBetweenAction)
+	ticker := time.NewTicker(*durationBetweenAction)
 	defer ticker.Stop()
 	done := make(chan bool)
 	go func() {
-		time.Sleep(timeToTrade)
+		time.Sleep(*durationToRun)
 		done <- true
 	}()
 	for {
@@ -423,11 +415,11 @@ func main() {
 			}
 			c.updateOrders()
 			switch {
-			case clock.NextClose.Sub(time.Now()) < timeBeforeMarketCloseToSell:
+			case clock.NextClose.Sub(time.Now()) < *timeBeforeMarketCloseToSell:
 				log.Printf("market is closing soon")
 				trading = false
 				c.closeOutTrading()
-				time.Sleep(timeBeforeMarketCloseToSell)
+				time.Sleep(*timeBeforeMarketCloseToSell)
 				continue
 			case !clock.IsOpen:
 				trading = false
@@ -443,12 +435,12 @@ func main() {
 }
 
 func init() {
-	os.Setenv(common.EnvApiKeyID, "PKACWN8W5WFG2M5LNPEQ")
-	os.Setenv(common.EnvApiSecretKey, "1VzEyqvSO60TLo3X2jlUEiNm8IQe8S3vWeOnZVs3")
+	os.Setenv(common.EnvApiKeyID, *apiKeyID)
+	os.Setenv(common.EnvApiSecretKey, *apiSecretKey)
 
 	log.Printf("Running w/ credentials [%v %v]\n", common.Credentials().ID, common.Credentials().Secret)
 
-	alpaca.SetBaseUrl("https://paper-api.alpaca.markets")
+	alpaca.SetBaseUrl(*apiEndpoint)
 
 	var err error
 	PST, err = time.LoadLocation("America/Los_Angeles")
