@@ -103,7 +103,7 @@ func (c *Client) Update(p *purchase.Purchase) error {
 	}
 	defer stmt.Close()
 
-	_, err := stmt.ExecContext(ctx, string(buyBytes), string(sellBytes), p.ID)
+	_, err = stmt.ExecContext(ctx, string(buyBytes), string(sellBytes), p.ID)
 	if err != nil {
 		return fmt.Errorf("unable to update row: %v", err)
 	}
