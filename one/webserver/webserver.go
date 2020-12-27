@@ -22,7 +22,7 @@ var (
 // Webserver manages the webserver.
 type Webserver struct {
 	alpacaClient *alpaca.Client
-	db           *database.Client
+	db           database.Client
 }
 
 // New creates a new webserver.
@@ -111,9 +111,9 @@ func (ws *Webserver) openSellOrders() ([]*alpaca.Order, error) {
 
 // main serves information for the main page.
 func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
-	allPurchases, err := ws.db.Purchases()
+	allPurchases, err := ws.db.Purchases(time.Now().In(PST).YearDay(), PST)
 	if err != nil {
-		fmt.Fprintf(w, "unable to get all purchases from database: %v\n", err)
+		fmt.Fprintf(w, "unable to get today's purchases from database: %v\n", err)
 		return
 	}
 

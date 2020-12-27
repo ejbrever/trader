@@ -6,8 +6,14 @@ github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/ejbrever/trader v1.2.2 h1:OUEo7e2xafn9pupSJ1xKa35vZB63UowSQtl8loR37gE=
 github.com/ejbrever/trader/one v0.0.0-20201225053939-727673838fe0 h1:wSoGIjZzD94Q9xb3dfmJCSm6+3MJx1X53u7CO5LH8pQ=
+github.com/ejbrever/trader/one v0.0.0-20201227054221-494c82f84b1e h1:KrEGfKPrhNo4CL4kNBRi4W71iWpbvk0QsTGiGCiDWUY=
+github.com/ejbrever/trader/one v0.0.0-20201227054616-77482b488925 h1:IFEAUcmrMUxvvnxoQ/bzX/EsJV4uHs9Q41QlKD72CXE=
 github.com/ejbrever/trader/one/database v0.0.0-20201225053939-727673838fe0 h1:B4DR4ZR02AY+8tv3QctCr4ToVNRRe4b/olQ2qpeTRJw=
 github.com/ejbrever/trader/one/database v0.0.0-20201225053939-727673838fe0/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054221-494c82f84b1e h1:tf6zVxvyQ+cllUS3HH4r8HNvJSxGUZy0LBKWM8M2FQ4=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054221-494c82f84b1e/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054616-77482b488925 h1:pOYiv4457+CgSdJsT/L2DYrIUmnsPZoPchCcS9NWyVU=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054616-77482b488925/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
 github.com/ejbrever/trader/one/purchase v0.0.0-20201225041924-4f7f3e90111a h1:spMOr9P/Dfaafz22QYuepAuyeNyeC9JwUVAG5DhQZFk=
 github.com/ejbrever/trader/one/purchase v0.0.0-20201225041924-4f7f3e90111a/go.mod h1:hUCnQOOv0ZuiuAUNsWWzfCB7WM7r0wQSOA0HVJXrbLo=
 github.com/go-sql-driver/mysql v1.5.0 h1:ozyZYNQW3x3HtqT1jira07DN2PArx2v7/mN66gGcHOs=
