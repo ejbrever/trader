@@ -19,10 +19,12 @@ var (
 	apiEndpoint                 = flag.String("api_endpoint", "https://paper-api.alpaca.markets", "The REST API endpoint for Alpaca.")
 	apiKeyID                    = flag.String("api_key_id", "", "The Alpaca API Key ID.")
 	apiSecretKey                = flag.String("api_secret_key", "", "The Alpaca API Secret Key.")
+	backtestFile                = flag.String("backtest_file", "", "The filename with ticker data to use for backtesting.")
 	durationBetweenAction       = flag.Duration("duration_between_action", 30*time.Second, "The time between each attempt to buy or sell.")
 	durationToRun               = flag.Duration("duration_to_run", 10*time.Second, "The time that the job should run.")
 	maxConcurrentPurchases      = flag.Int("max_concurrent_purchases", 0, "The maximum number of allowed purchases at a given time.")
 	purchaseQty                 = flag.Float64("purchase_quanity", 0, "Quantity of shares to purchase with each buy order.")
+	runBacktest                 = flag.Bool("run_backtest", false, "Run a backtest simulation.")
 	stockSymbol                 = flag.String("stock_symbol", "", "The stock to buy an sell.")
 	timeBeforeMarketCloseToSell = flag.Duration("time_before_market_close_to_sell", 1*time.Hour, "The time before market close that all positions should be closed out.")
 )
@@ -38,24 +40,33 @@ var (
 type client struct {
 	concurrentPurchases int
 	alpacaClient        *alpaca.Client
-	dbClient            *database.Client
+	dbClient            database.Client
 	purchases           []*purchase.Purchase
 	stockSymbol         string
 }
 
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
-	db, err := database.New()
-	if err != nil {
-		return nil, fmt.Errorf("unable to open db: %v", err)
-	}
-	// TODO(ejbrever) This needs to be all of TODAYS purchases only.
-	purchases, err := db.Purchases()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get all purchases: %v", err)
+	var purchases []*purchase.Purchase
+	var alpacaClient *alpaca.Client
+	var db database.Client
+	switch {
+	case *runBacktest:
+		db, _ = database.NewFake()
+	default:
+		alpacaClient = alpaca.NewClient(common.Credentials())
+		db, err := database.New()
+		if err != nil {
+			return nil, fmt.Errorf("unable to open db: %v", err)
+		}
+		// TODO(ejbrever) This needs to be all of TODAYS purchases only.
+		purchases, err = db.Purchases()
+		if err != nil {
+			return nil, fmt.Errorf("unable to get all purchases: %v", err)
+		}
 	}
 	return &client{
 		concurrentPurchases: concurrentPurchases,
-		alpacaClient:        alpaca.NewClient(common.Credentials()),
+		alpacaClient:        alpacaClient,
 		dbClient:            db,
 		purchases:           purchases,
 		stockSymbol:         stockSymbol,
@@ -369,7 +380,11 @@ func serveHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func setupLogging() *os.File {
-	f, err := os.OpenFile("trader-one-logs", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	filename := "trader-one-logs"
+	if *runBacktest {
+		filename += "-backtest"
+	}
+	f, err := os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("error opening file: %v", err)
 	}
@@ -387,6 +402,11 @@ func main() {
 
 	f := setupLogging()
 	defer closeLogging(f)
+
+	if *runBacktest {
+		backtest()
+		return
+	}
 
 	c, err := new(*stockSymbol, *maxConcurrentPurchases)
 	if err != nil {
