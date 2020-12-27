@@ -117,10 +117,10 @@ func (c *MySQLClient) Update(p *purchase.Purchase) error {
 	return nil
 }
 
-// Purchases retrieves all purchases stored in the database.
-// TODO(ejbrever): Argument to filter by date(s).
-func (c *MySQLClient) Purchases() ([]*purchase.Purchase, error) {
-	results, err := c.db.Query(`SELECT id, buy_order, sell_order FROM trader_one`)
+// Purchases retrieves all purchases stored in the database for a given year day.
+// The server is in UTC, however the timezone will be specified so PST can be used.
+func (c *MySQLClient) Purchases(yearDay int, tz *time.Location) ([]*purchase.Purchase, error) {
+	results, err := c.db.Query(`SELECT id, created_at, buy_order, sell_order FROM trader_one`)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get purchases from table: %v", err)
 	}
@@ -129,9 +129,13 @@ func (c *MySQLClient) Purchases() ([]*purchase.Purchase, error) {
 	for results.Next() {
 		var id int64
 		var buyOrderJSON, sellOrderJSON string
-		err = results.Scan(&id, &buyOrderJSON, &sellOrderJSON)
+		var createdAt time.Time
+		err = results.Scan(&id, &createdAt, &buyOrderJSON, &sellOrderJSON)
 		if err != nil {
 			return nil, fmt.Errorf("unable to scan row: %v", err)
+		}
+		if yearDay != createdAt.In(tz).YearDay() {
+			continue
 		}
 		sellOrder := &alpaca.Order{}
 		buyOrder := &alpaca.Order{}
@@ -160,5 +164,5 @@ func open() (*sql.DB, error) {
 }
 
 func dsn(dbName string) string {
-	return fmt.Sprintf("%s:%s@tcp(%s)/%s", username, password, hostname, dbName)
+	return fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", username, password, hostname, dbName)
 }
