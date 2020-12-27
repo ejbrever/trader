@@ -1,6 +1,10 @@
 package database
 
-import "github.com/ejbrever/trader/one/purchase"
+import (
+	"time"
+
+	"github.com/ejbrever/trader/one/purchase"
+)
 
 // FakeClient mocks interactions with the database.
 type FakeClient struct{}
@@ -16,7 +20,7 @@ func (f *FakeClient) Insert(p *purchase.Purchase) error {
 }
 
 // Purchases returns a fake Purchases func for testing.
-func (f *FakeClient) Purchases() ([]*purchase.Purchase, error) {
+func (f *FakeClient) Purchases(yearDay int, tz *time.Location) ([]*purchase.Purchase, error) {
 	return nil, nil
 }
 

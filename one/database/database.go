@@ -25,7 +25,7 @@ const (
 // Client defines all funcs needed for the database client.
 type Client interface {
 	Insert(p *purchase.Purchase) error
-	Purchases() ([]*purchase.Purchase, error)
+	Purchases(yearDay int, tz *time.Location) ([]*purchase.Purchase, error)
 	Update(p *purchase.Purchase) error
 }
 
