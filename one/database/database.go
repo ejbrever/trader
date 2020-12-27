@@ -22,21 +22,28 @@ const (
 	dbName   = "one"
 )
 
-// Client manages interactions with the database.
-type Client struct {
+// Client defines all funcs needed for the database client.
+type Client interface {
+	Insert(p *purchase.Purchase) error
+	Purchases() ([]*purchase.Purchase, error)
+	Update(p *purchase.Purchase) error
+}
+
+// MySQLClient manages interactions with the database.
+type MySQLClient struct {
 	db *sql.DB
 }
 
 // New creates a new database client that is connected to the database.
-func New() (*Client, error) {
+func New() (*MySQLClient, error) {
 	db, err := open()
-	return &Client{
+	return &MySQLClient{
 		db: db,
 	}, err
 }
 
 // Insert inserts purchase data into the table.
-func (c *Client) Insert(p *purchase.Purchase) error {
+func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 	if p.ID != 0 {
 		return fmt.Errorf("purchase cannot have a preexisting ID")
 	}
@@ -73,7 +80,7 @@ func (c *Client) Insert(p *purchase.Purchase) error {
 }
 
 // Update updates purchase data into the table.
-func (c *Client) Update(p *purchase.Purchase) error {
+func (c *MySQLClient) Update(p *purchase.Purchase) error {
 	if p.ID == 0 {
 		return fmt.Errorf("purchase must have a preexisting ID")
 	}
@@ -112,7 +119,7 @@ func (c *Client) Update(p *purchase.Purchase) error {
 
 // Purchases retrieves all purchases stored in the database.
 // TODO(ejbrever): Argument to filter by date(s).
-func (c *Client) Purchases() ([]*purchase.Purchase, error) {
+func (c *MySQLClient) Purchases() ([]*purchase.Purchase, error) {
 	results, err := c.db.Query(`SELECT id, buy_order, sell_order FROM trader_one`)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get purchases from table: %v", err)
