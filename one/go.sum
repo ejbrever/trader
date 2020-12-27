@@ -15,6 +15,7 @@ github.com/ejbrever/trader/one v0.0.0-20201225053939-727673838fe0 h1:wSoGIjZzD94
 github.com/ejbrever/trader/one v0.0.0-20201225175836-7921bcc35962 h1:azUOMhj+V4Z0qHaNchqGof3iU3czl1LfUaQQ0V7IsD0=
 github.com/ejbrever/trader/one v0.0.0-20201226023622-b703b0666599 h1:sm+P6TB/C4EDFGiilA4iVlJJSDbwYCPyHyGJcRVDvRQ=
 github.com/ejbrever/trader/one v0.0.0-20201227050012-4367586762c9 h1:i0w/vfSkRr0BWZ8Lici4es/l+Muds6+TwIC8AwJ7gZ4=
+github.com/ejbrever/trader/one v0.0.0-20201227054747-65bc78f24917 h1:Dm/4yCHeqSs9dgxDsQQFGaUmpLDdKqJeDnP9y2saCBM=
 github.com/ejbrever/trader/one/database v0.0.0-20201225053939-727673838fe0 h1:B4DR4ZR02AY+8tv3QctCr4ToVNRRe4b/olQ2qpeTRJw=
 github.com/ejbrever/trader/one/database v0.0.0-20201225053939-727673838fe0/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
 github.com/ejbrever/trader/one/database v0.0.0-20201225175836-7921bcc35962 h1:hF0KqQC2ziKAJp3X7+y/qRGkVQDhRDcCjBFTpMUX/KA=
@@ -23,6 +24,8 @@ github.com/ejbrever/trader/one/database v0.0.0-20201226023622-b703b0666599 h1:ID
 github.com/ejbrever/trader/one/database v0.0.0-20201226023622-b703b0666599/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
 github.com/ejbrever/trader/one/database v0.0.0-20201227050012-4367586762c9 h1:R4z6G2T5OQDW8cQ00pOSJT4+kbktnHpwRBhwqdRrsr0=
 github.com/ejbrever/trader/one/database v0.0.0-20201227050012-4367586762c9/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054747-65bc78f24917 h1:ttRNBT/kpsCxTFtDOfFmxotwlfz29B5Q/2awZk1h3ZA=
+github.com/ejbrever/trader/one/database v0.0.0-20201227054747-65bc78f24917/go.mod h1:0a+FaZL1rJaXbf0Fja5kn7DuKy8mJq3DusGd0Csg/PY=
 github.com/ejbrever/trader/one/purchase v0.0.0-20201224065752-cf72d6160a5a h1:HCREmIQvVg6/JElYvnCuhSb7XSPtpyP4x3dS+esucfU=
 github.com/ejbrever/trader/one/purchase v0.0.0-20201224065752-cf72d6160a5a/go.mod h1:hUCnQOOv0ZuiuAUNsWWzfCB7WM7r0wQSOA0HVJXrbLo=
 github.com/ejbrever/trader/one/purchase v0.0.0-20201225041924-4f7f3e90111a h1:spMOr9P/Dfaafz22QYuepAuyeNyeC9JwUVAG5DhQZFk=

@@ -58,8 +58,7 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to open db: %v", err)
 		}
-		// TODO(ejbrever) This needs to be all of TODAYS purchases only.
-		purchases, err = db.Purchases()
+		purchases, err = db.Purchases(time.Now().In(PST).YearDay(), PST)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get all purchases: %v", err)
 		}
