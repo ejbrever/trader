@@ -146,7 +146,14 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "unable to get sell orders: %v\n", err)
 	}
 	for _, o := range sellOrders {
-		fmt.Printf("%v [%v] (%v), Stop Price ($%v), Limit Price ($%v)\n", o.Symbol, o.Qty, o.Type, o.StopPrice.String(), o.LimitPrice.String())
+		var stopPriceStr, limitPriceStr string
+		if o.StopPrice != nil {
+			stopPriceStr = o.StopPrice.String()
+		}
+		if o.LimitPrice != nil {
+			limitPriceStr = o.LimitPrice.String()
+		}
+		fmt.Fprintf(w, "%v [%v] (%v), Stop Price ($%v), Limit Price ($%v)\n", o.Symbol, o.Qty, o.Type, stopPriceStr, limitPriceStr)
 	}
 
 	timePeriod := "14D"
