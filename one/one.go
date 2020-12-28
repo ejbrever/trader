@@ -296,6 +296,7 @@ func (c *client) placeBuyOrder() {
 	c.purchases = append(c.purchases, p)
 	log.Printf("buy order placed:\n%+v", o)
 
+	log.Printf("c.dbClient: %v", c.dbClient)
 	if err := c.dbClient.Insert(p); err != nil {
 		log.Printf("unable to insert buy order in database: %v", err)
 	}
