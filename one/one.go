@@ -58,6 +58,9 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to open db: %v", err)
 		}
+		if db == nil {
+			return nil, fmt.Errorf("empty db")
+		}
 		purchases, err = db.Purchases(time.Now().In(PST).YearDay(), PST)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get all purchases: %v", err)
