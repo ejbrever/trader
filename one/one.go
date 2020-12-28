@@ -175,7 +175,7 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 	lossLimitPrice := decimal.NewFromFloat(basePrice - basePrice*.0017)
 
 	var err error
-	sellOrder, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
+	req := &alpaca.PlaceOrderRequest{
 		Side:        alpaca.Sell,
 		AssetKey:    &c.stockSymbol,
 		Type:        alpaca.Limit,
@@ -189,7 +189,12 @@ func (c *client) placeSellOrder(p *purchase.Purchase) {
 			StopPrice:  &stopPrice,
 			LimitPrice: &lossLimitPrice,
 		},
-	})
+	}
+	if *runBacktest {
+		c.fakePlaceSellOrder(p, req)
+		return
+	}
+	sellOrder, err := c.alpacaClient.PlaceOrder(*req)
 	if err != nil {
 		log.Printf("unable to place sell order: %v\npurchase:\nbuy:%+v\nsell:%+v\n",
 			err, p.BuyOrder, p.SellOrder)
@@ -307,6 +312,9 @@ func (c *client) closeOutTrading() {
 // order returns details for a given order. If the order was replaced, it
 // returns details for the new order.
 func (c *client) order(id string) *alpaca.Order {
+	if *runBacktest {
+		return c.fakeOrder(id)
+	}
 	order, err := c.alpacaClient.GetOrder(id)
 	if err != nil {
 		log.Printf("GetOrder %q error: %v", id, err)
