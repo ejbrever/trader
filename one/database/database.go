@@ -37,6 +37,9 @@ type MySQLClient struct {
 // New creates a new database client that is connected to the database.
 func New() (*MySQLClient, error) {
 	db, err := open()
+	if err != nil {
+		return nil, err
+	}
 	return &MySQLClient{
 		db: db,
 	}, err
