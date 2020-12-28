@@ -67,10 +67,10 @@ func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 	}
 
 	query := `INSERT INTO trader_one(buy_order, sell_order) VALUES (?, ?)`
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
-	fmt.Printf("3")
-	defer cancelFunc()
-	stmt, err := c.db.PrepareContext(ctx, query)
+	// ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	// fmt.Printf("3")
+	// defer cancelFunc()
+	stmt, err := c.db.PrepareContext(context.Background(), query)
 	fmt.Printf("4")
 	if err != nil {
 		return fmt.Errorf("unable to prepare SQL statement: %v", err)
