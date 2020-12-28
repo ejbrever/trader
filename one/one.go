@@ -40,7 +40,7 @@ var (
 type client struct {
 	concurrentPurchases int
 	alpacaClient        *alpaca.Client
-	dbClient            database.Client
+	dbClient            *database.MySQLClient
 	purchases           []*purchase.Purchase
 	stockSymbol         string
 }
@@ -48,10 +48,10 @@ type client struct {
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 	var purchases []*purchase.Purchase
 	var alpacaClient *alpaca.Client
-	var db database.Client
+	var db *database.MySQLClient
 	switch {
 	case *runBacktest:
-		db, _ = database.NewFake()
+		// db, _ = database.NewFake()
 	default:
 		alpacaClient = alpaca.NewClient(common.Credentials())
 		db, err := database.New()
