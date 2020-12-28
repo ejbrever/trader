@@ -51,17 +51,20 @@ func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 		return fmt.Errorf("purchase cannot have a preexisting ID")
 	}
 
-	buyBytes, err := json.Marshal(p.BuyOrder)
-	if err != nil {
-		return fmt.Errorf("unable to marshal buy order: %v", err)
+	var err error
+	var buyBytes, sellBytes []byte
+	if p.BuyOrder != nil {
+		buyBytes, err = json.Marshal(p.BuyOrder)
+		if err != nil {
+			return fmt.Errorf("unable to marshal buy order: %v", err)
+		}
 	}
-	fmt.Printf("1")
-
-	sellBytes, err := json.Marshal(p.SellOrder)
-	if err != nil {
-		return fmt.Errorf("unable to marshal sell order: %v", err)
+	if p.SellOrder != nil {
+		sellBytes, err = json.Marshal(p.SellOrder)
+		if err != nil {
+			return fmt.Errorf("unable to marshal sell order: %v", err)
+		}
 	}
-	fmt.Printf("2")
 
 	query := `INSERT INTO trader_one(buy_order, sell_order) VALUES (?, ?)`
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
