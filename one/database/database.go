@@ -75,7 +75,7 @@ func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 	}
 	defer stmt.Close()
 
-	res, err := stmt.ExecContext(ctx, string(buyBytes), string(sellBytes))
+	res, err := stmt.ExecContext(ctx, jsonString(buyBytes), jsonString(sellBytes))
 	if err != nil {
 		return fmt.Errorf("unable to insert row: %v", err)
 	}
@@ -118,7 +118,7 @@ func (c *MySQLClient) Update(p *purchase.Purchase) error {
 	}
 	defer stmt.Close()
 
-	_, err = stmt.ExecContext(ctx, string(buyBytes), string(sellBytes), p.ID)
+	_, err = stmt.ExecContext(ctx, jsonString(buyBytes), jsonString(sellBytes), p.ID)
 	if err != nil {
 		return fmt.Errorf("unable to update row: %v", err)
 	}
@@ -173,4 +173,13 @@ func open() (*sql.DB, error) {
 
 func dsn(dbName string) string {
 	return fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", username, password, hostname, dbName)
+}
+
+// jsonString returns a string that will be accepted by the database.
+func jsonString(b []byte) string {
+	s := string(b)
+	if s == "" {
+		return "{}"
+	}
+	return s
 }
