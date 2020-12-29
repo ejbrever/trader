@@ -40,7 +40,7 @@ var (
 type client struct {
 	concurrentPurchases int
 	alpacaClient        *alpaca.Client
-	dbClient            *database.MySQLClient
+	dbClient            database.Client // This is an interface.
 	purchases           []*purchase.Purchase
 	stockSymbol         string
 }
@@ -48,37 +48,29 @@ type client struct {
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 	var purchases []*purchase.Purchase
 	var alpacaClient *alpaca.Client
-	var db *database.MySQLClient
+	var db database.Client
 	var err error
 	switch {
 	case *runBacktest:
-		// db, _ = database.NewFake()
+		db, _ = database.NewFake()
 	default:
 		alpacaClient = alpaca.NewClient(common.Credentials())
 		db, err = database.New()
 		if err != nil {
 			return nil, fmt.Errorf("unable to open db: %v", err)
 		}
-		fmt.Printf("db.DB after New(): %v\n", db.DB)
-		if db == nil {
-			return nil, fmt.Errorf("empty db")
-		}
 		purchases, err = db.Purchases(time.Now().In(PST).YearDay(), PST)
 		if err != nil {
 			return nil, fmt.Errorf("unable to get all purchases: %v", err)
 		}
-		fmt.Printf("db.DB after first .Purchase(): %v\n", db.DB)
 	}
-	cl := &client{
+	return &client{
 		concurrentPurchases: concurrentPurchases,
 		alpacaClient:        alpacaClient,
 		dbClient:            db,
 		purchases:           purchases,
 		stockSymbol:         stockSymbol,
-	}
-	fmt.Printf("db after cl: %v\n", cl.dbClient)
-	fmt.Printf("db.DB after cl: %v\n", cl.dbClient.DB)
-	return cl, nil
+	}, nil
 }
 
 // boughtNotSelling returns a slice of purchases that have been bought and
@@ -302,7 +294,6 @@ func (c *client) placeBuyOrder() {
 	c.purchases = append(c.purchases, p)
 	log.Printf("buy order placed:\n%+v", o)
 
-	log.Printf("c.dbClient: %v", c.dbClient)
 	if err := c.dbClient.Insert(p); err != nil {
 		log.Printf("unable to insert buy order in database: %v", err)
 	}
@@ -430,7 +421,6 @@ func main() {
 		log.Printf("unable to start trader-one: %v", err)
 		return
 	}
-	fmt.Printf("db.DB after new complete: %v\n", c.dbClient.DB)
 	log.Printf("trader one is now online!")
 
 	ticker := time.NewTicker(*durationBetweenAction)
@@ -446,7 +436,6 @@ func main() {
 			c.closeOutTrading()
 			return
 		case t := <-ticker.C:
-			fmt.Printf("tick db.DB: %v\n", c.dbClient.DB)
 			clock, err := c.alpacaClient.GetClock()
 			if err != nil {
 				log.Printf("error checking if market is open: %v", err)
