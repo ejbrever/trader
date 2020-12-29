@@ -176,12 +176,13 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "\n\nToday's Completed Wins/Losses\n")
 	for _, p := range ws.todaysCompletedPurchases(allPurchases) {
-		fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] \n",
+		fmt.Fprintf(w, "Sold @ %v: %v, Qty: %v [$%v => $%v] %v\n",
 			p.SellOrder.FilledAt.In(PST),
 			p.SellOrder.Symbol,
 			p.SellOrder.Qty,
 			p.BuyOrder.FilledAvgPrice.StringFixed(2),
 			p.SellOrder.FilledAvgPrice.StringFixed(2),
+			winOrLoss(p),
 		)
 	}
 
@@ -201,6 +202,15 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "\nbuy order: %+v", p.BuyOrder)
 		fmt.Fprintf(w, "sell order: %+v\n", p.SellOrder)
 	}
+}
+
+// winOrLoss returns a string of WIN when the sell price is greater than or
+// equal to the buy price. Otherwise, return a string of LOSS.
+func winOrLoss(p *purchase.Purchase) string {
+	if p.SellOrder.FilledAvgPrice.GreaterThanOrEqual(*p.BuyOrder.FilledAvgPrice) {
+		return "WIN"
+	}
+	return "LOSS"
 }
 
 func main() {
