@@ -49,12 +49,13 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 	var purchases []*purchase.Purchase
 	var alpacaClient *alpaca.Client
 	var db *database.MySQLClient
+	var err error
 	switch {
 	case *runBacktest:
 		// db, _ = database.NewFake()
 	default:
 		alpacaClient = alpaca.NewClient(common.Credentials())
-		db, err := database.New()
+		db, err = database.New()
 		if err != nil {
 			return nil, fmt.Errorf("unable to open db: %v", err)
 		}
