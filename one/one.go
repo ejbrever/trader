@@ -68,13 +68,15 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		}
 		fmt.Printf("db.DB after first .Purchase(): %v\n", db.DB)
 	}
-	return &client{
+	cl := &client{
 		concurrentPurchases: concurrentPurchases,
 		alpacaClient:        alpacaClient,
 		dbClient:            db,
 		purchases:           purchases,
 		stockSymbol:         stockSymbol,
-	}, nil
+	}
+	fmt.Printf("db.DB after cl: %v\n", cl.dbClient.DB)
+	return cl, nil
 }
 
 // boughtNotSelling returns a slice of purchases that have been bought and
