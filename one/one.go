@@ -75,6 +75,7 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		purchases:           purchases,
 		stockSymbol:         stockSymbol,
 	}
+	fmt.Printf("db after cl: %v\n", cl.dbClient)
 	fmt.Printf("db.DB after cl: %v\n", cl.dbClient.DB)
 	return cl, nil
 }
