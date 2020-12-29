@@ -31,17 +31,17 @@ type Client interface {
 
 // MySQLClient manages interactions with the database.
 type MySQLClient struct {
-	db *sql.DB
+	DB *sql.DB
 }
 
 // New creates a new database client that is connected to the database.
 func New() (*MySQLClient, error) {
-	db, err := open()
+	DB, err := open()
 	if err != nil {
 		return nil, err
 	}
 	return &MySQLClient{
-		db: db,
+		DB: db,
 	}, err
 }
 
@@ -70,7 +70,7 @@ func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 	// ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
 	// fmt.Printf("3")
 	// defer cancelFunc()
-	stmt, err := c.db.PrepareContext(context.Background(), query)
+	stmt, err := c.DB.PrepareContext(context.Background(), query)
 	fmt.Printf("4")
 	if err != nil {
 		return fmt.Errorf("unable to prepare SQL statement: %v", err)
@@ -119,7 +119,7 @@ func (c *MySQLClient) Update(p *purchase.Purchase) error {
     id = ?`
 	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelFunc()
-	stmt, err := c.db.PrepareContext(ctx, query)
+	stmt, err := c.DB.PrepareContext(ctx, query)
 	if err != nil {
 		return fmt.Errorf("unable to prepare SQL statement: %v", err)
 	}
@@ -135,7 +135,7 @@ func (c *MySQLClient) Update(p *purchase.Purchase) error {
 // Purchases retrieves all purchases stored in the database for a given year day.
 // The server is in UTC, however the timezone will be specified so PST can be used.
 func (c *MySQLClient) Purchases(yearDay int, tz *time.Location) ([]*purchase.Purchase, error) {
-	results, err := c.db.Query(`SELECT id, created_at, buy_order, sell_order FROM trader_one`)
+	results, err := c.DB.Query(`SELECT id, created_at, buy_order, sell_order FROM trader_one`)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get purchases from table: %v", err)
 	}
