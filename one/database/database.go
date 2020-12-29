@@ -36,7 +36,7 @@ type MySQLClient struct {
 
 // New creates a new database client that is connected to the database.
 func New() (*MySQLClient, error) {
-	DB, err := open()
+	db, err := open()
 	if err != nil {
 		return nil, err
 	}
@@ -67,30 +67,23 @@ func (c *MySQLClient) Insert(p *purchase.Purchase) error {
 	}
 
 	query := `INSERT INTO trader_one(buy_order, sell_order) VALUES (?, ?)`
-	// ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
-	// fmt.Printf("3")
-	// defer cancelFunc()
+	ctx, cancelFunc := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelFunc()
 	stmt, err := c.DB.PrepareContext(context.Background(), query)
-	fmt.Printf("4")
 	if err != nil {
 		return fmt.Errorf("unable to prepare SQL statement: %v", err)
 	}
 	defer stmt.Close()
-	fmt.Printf("5")
 
 	res, err := stmt.ExecContext(ctx, string(buyBytes), string(sellBytes))
-	fmt.Printf("6")
 	if err != nil {
 		return fmt.Errorf("unable to insert row: %v", err)
 	}
 	id, err := res.LastInsertId()
-	fmt.Printf("7")
 	if err != nil {
 		return fmt.Errorf("unable to find new ID: %v", err)
 	}
-	fmt.Printf("8")
 	p.ID = id
-	fmt.Printf("9")
 	return nil
 }
 
