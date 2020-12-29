@@ -191,7 +191,7 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "unable to get account activities: %v", err)
 		return
 	}
-	fmt.Fprintf(w, "\n\nRecent Activity\n")
+	fmt.Fprintf(w, "\n\nRecent Activity (%v trades today)\n", tradesToday(activities))
 	for _, a := range activities {
 		fmt.Fprintf(w, "%v: [%v] %v, %v @ $%v\n",
 			a.TransactionTime.In(PST), a.Side, a.Symbol, a.Qty, a.Price)
@@ -211,6 +211,17 @@ func winOrLoss(p *purchase.Purchase) string {
 		return "WIN"
 	}
 	return "LOSS"
+}
+
+func tradesToday(activities []alpaca.AccountActivity) int {
+	yearDayToday := time.Now().In(PST).YearDay()
+	var count int
+	for _, a := range activities {
+		if yearDayToday == a.TransactionTime.In(PST).YearDay() {
+			count++
+		}
+	}
+	return count
 }
 
 func main() {
