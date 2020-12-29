@@ -58,6 +58,7 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to open db: %v", err)
 		}
+		fmt.Printf("db.DB after New(): %v", db.DB)
 		if db == nil {
 			return nil, fmt.Errorf("empty db")
 		}
@@ -65,6 +66,7 @@ func new(stockSymbol string, concurrentPurchases int) (*client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to get all purchases: %v", err)
 		}
+		fmt.Printf("db.DB after first .Purchase(): %v", db.DB)
 	}
 	return &client{
 		concurrentPurchases: concurrentPurchases,
@@ -424,6 +426,7 @@ func main() {
 		log.Printf("unable to start trader-one: %v", err)
 		return
 	}
+	fmt.Printf("db.DB after new complete: %v", c.dbClient.DB)
 	log.Printf("trader one is now online!")
 
 	ticker := time.NewTicker(*durationBetweenAction)
@@ -439,6 +442,7 @@ func main() {
 			c.closeOutTrading()
 			return
 		case t := <-ticker.C:
+			fmt.Printf("tick db.DB: %v", c.dbClient.DB)
 			clock, err := c.alpacaClient.GetClock()
 			if err != nil {
 				log.Printf("error checking if market is open: %v", err)
