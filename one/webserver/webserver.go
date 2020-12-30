@@ -207,10 +207,11 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 // winOrLoss returns a string of WIN when the sell price is greater than or
 // equal to the buy price. Otherwise, return a string of LOSS.
 func winOrLoss(p *purchase.Purchase) string {
+	diff := p.SellOrder.FilledAvgPrice.Sub(*p.BuyOrder.FilledAvgPrice).StringFixed(2)
 	if p.SellOrder.FilledAvgPrice.GreaterThanOrEqual(*p.BuyOrder.FilledAvgPrice) {
-		return "WIN"
+		return fmt.Sprintf("WIN (%%%v)", diff)
 	}
-	return "LOSS"
+	return fmt.Sprintf("LOSS (%%%v)", diff)
 }
 
 func tradesToday(activities []alpaca.AccountActivity) int {
