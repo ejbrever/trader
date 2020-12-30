@@ -1,15 +1,20 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/alpacahq/alpaca-trade-api-go/alpaca"
 	"github.com/ejbrever/trader/one/purchase"
 	"github.com/shopspring/decimal"
 )
+
+// historyReferenceTime is a string of the datetime layout in the historical files.
+const historyReferenceTime = "2006-01-02 15:04:05"
 
 var (
 	fakePurchases   = []*purchase.Purchase{}
@@ -27,6 +32,15 @@ type fakeStockPrice struct {
 func backtest() {
 	// Seed rand.
 	rand.Seed(time.Now().UnixNano())
+
+	_, err := historicalData()
+	if err != nil {
+		log.Printf("unable to read history: %v", err)
+		return
+	}
+	if true {
+		return
+	}
 
 	c, err := new(*stockSymbol, *maxConcurrentPurchases)
 	if err != nil {
@@ -62,6 +76,65 @@ func backtest() {
 		}
 		go c.run(t)
 	}
+}
+
+type history struct {
+	epochToTickerData map[int64]*historicalTickerData
+}
+
+func newHistory() *history {
+	return &history{
+		epochToTickerData: map[int64]*historicalTickerData{},
+	}
+}
+
+type historicalTickerData struct {
+	High  decimal.Decimal
+	Low   decimal.Decimal
+	Close decimal.Decimal
+}
+
+func historicalData() (*history, error) {
+	log.Printf("starting to read historical data")
+	f, err := os.Open(*backtestFile)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read backtest file: %v", err)
+	}
+	defer f.Close()
+
+	records, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	h := newHistory()
+	for _, r := range records {
+		// Historical data files are in EST timezone.
+		t, err := time.ParseInLocation(historyReferenceTime, r[0], EST)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read in time %q: %v", r[0], err)
+		}
+		// need to filter to only market open times.
+		high, err := decimal.NewFromString(r[2])
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert %q to float: %v", r[2], err)
+		}
+		low, err := decimal.NewFromString(r[3])
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert %q to float: %v", r[3], err)
+		}
+		close, err := decimal.NewFromString(r[4])
+		if err != nil {
+			return nil, fmt.Errorf("unable to convert %q to float: %v", r[4], err)
+		}
+		h.epochToTickerData[t.Unix()] = &historicalTickerData{
+			High:  high,
+			Low:   low,
+			Close: close,
+		}
+	}
+	log.Printf("finished reading historical data, had %v rows", len(h.epochToTickerData))
+	return h, nil
 }
 
 // randomBool returns true or false randomly.

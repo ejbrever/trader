@@ -30,7 +30,10 @@ var (
 )
 
 var (
-	// PST is the timezone for the Pacific time.
+	// EST is the timezone for Eastern time.
+	EST *time.Location
+
+	// PST is the timezone for Pacific time.
 	PST *time.Location
 
 	// Is trading currently allowed by the algorithm?
@@ -498,7 +501,13 @@ func init() {
 	var err error
 	PST, err = time.LoadLocation("America/Los_Angeles")
 	if err != nil {
-		fmt.Printf("unable to load timezone location: %v", err)
+		fmt.Printf("unable to load PST timezone location: %v", err)
+		os.Exit(1)
+	}
+
+	EST, err = time.LoadLocation("America/New_York")
+	if err != nil {
+		fmt.Printf("unable to load EST timezone location: %v", err)
 		os.Exit(1)
 	}
 }
