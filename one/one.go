@@ -226,15 +226,22 @@ func (c *client) buyEvent(t time.Time) bool {
 	limit := 3
 	endDt := time.Now()
 	startDt := endDt.Add(-5 * time.Minute)
-	bars, err := c.alpacaClient.GetSymbolBars(c.stockSymbol, alpaca.ListBarParams{
-		Timeframe: "1Min",
-		StartDt:   &startDt,
-		EndDt:     &endDt,
-		Limit:     &limit,
-	})
-	if err != nil {
-		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
-		return false
+	var bars []alpaca.Bar
+	var err error
+	switch {
+	case *runBacktest:
+		bars = c.fakeGetSymbolBars()
+	default:
+		bars, err = c.alpacaClient.GetSymbolBars(c.stockSymbol, alpaca.ListBarParams{
+			Timeframe: "1Min",
+			StartDt:   &startDt,
+			EndDt:     &endDt,
+			Limit:     &limit,
+		})
+		if err != nil {
+			log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
+			return false
+		}
 	}
 	if len(bars) < 3 {
 		log.Printf(
@@ -242,10 +249,16 @@ func (c *client) buyEvent(t time.Time) bool {
 			t, bars)
 		return false
 	}
-	a, err := c.alpacaClient.GetAccount()
-	if err != nil {
-		log.Printf("unable to get account details to check for needed cash: %v", err)
-		return false
+	var a *alpaca.Account
+	switch {
+	case *runBacktest:
+		a = c.fakeGetAccount()
+	default:
+		a, err = c.alpacaClient.GetAccount()
+		if err != nil {
+			log.Printf("unable to get account details to check for needed cash: %v", err)
+			return false
+		}
 	}
 	// neededCash is the amount of money needed to perform a purchase, with an
 	// extra 20% buffer.
@@ -276,17 +289,26 @@ func (c *client) allPositiveImprovements(bars []alpaca.Bar) bool {
 }
 
 func (c *client) placeBuyOrder() {
-	o, err := c.alpacaClient.PlaceOrder(alpaca.PlaceOrderRequest{
+	req := &alpaca.PlaceOrderRequest{
 		AccountID:   "",
 		AssetKey:    &c.stockSymbol,
 		Qty:         decimal.NewFromFloat(*purchaseQty),
 		Side:        alpaca.Buy,
 		Type:        alpaca.Market,
 		TimeInForce: alpaca.Day,
-	})
-	if err != nil {
-		log.Printf("unable to place buy order: %v", err)
+	}
+	var err error
+	var o *alpaca.Order
+	switch {
+	case *runBacktest:
+		c.fakePlaceBuyOrder(req)
 		return
+	default:
+		o, err = c.alpacaClient.PlaceOrder(*req)
+		if err != nil {
+			log.Printf("unable to place buy order: %v", err)
+			return
+		}
 	}
 	p := &purchase.Purchase{
 		BuyOrder: o,
