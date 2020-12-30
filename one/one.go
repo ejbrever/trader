@@ -464,6 +464,8 @@ func main() {
 
 func init() {
 	flag.Parse()
+
+	os.Setenv("TZ", "America/Los_Angeles")
 	os.Setenv(common.EnvApiKeyID, *apiKeyID)
 	os.Setenv(common.EnvApiSecretKey, *apiSecretKey)
 
