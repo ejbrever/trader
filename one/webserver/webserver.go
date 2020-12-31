@@ -209,9 +209,9 @@ func (ws *Webserver) main(w http.ResponseWriter, r *http.Request) {
 func winOrLoss(p *purchase.Purchase) string {
 	diff := p.SellOrder.FilledAvgPrice.Sub(*p.BuyOrder.FilledAvgPrice).StringFixed(2)
 	if p.SellOrder.FilledAvgPrice.GreaterThanOrEqual(*p.BuyOrder.FilledAvgPrice) {
-		return fmt.Sprintf("WIN (%%%v)", diff)
+		return fmt.Sprintf("WIN ($%v)", diff)
 	}
-	return fmt.Sprintf("LOSS (%%%v)", diff)
+	return fmt.Sprintf("LOSS ($%v)", diff)
 }
 
 func tradesToday(activities []alpaca.AccountActivity) int {
