@@ -19,12 +19,10 @@ var (
 	apiEndpoint                 = flag.String("api_endpoint", "https://paper-api.alpaca.markets", "The REST API endpoint for Alpaca.")
 	apiKeyID                    = flag.String("api_key_id", "", "The Alpaca API Key ID.")
 	apiSecretKey                = flag.String("api_secret_key", "", "The Alpaca API Secret Key.")
-	backtestFile                = flag.String("backtest_file", "", "The filename with ticker data to use for backtesting.")
 	durationBetweenAction       = flag.Duration("duration_between_action", 30*time.Second, "The time between each attempt to buy or sell.")
 	durationToRun               = flag.Duration("duration_to_run", 10*time.Second, "The time that the job should run.")
 	maxConcurrentPurchases      = flag.Int("max_concurrent_purchases", 0, "The maximum number of allowed purchases at a given time.")
 	purchaseQty                 = flag.Float64("purchase_quanity", 0, "Quantity of shares to purchase with each buy order.")
-	runBacktest                 = flag.Bool("run_backtest", false, "Run a backtest simulation.")
 	stockSymbol                 = flag.String("stock_symbol", "", "The stock to buy an sell.")
 	timeBeforeMarketCloseToSell = flag.Duration("time_before_market_close_to_sell", 1*time.Hour, "The time before market close that all positions should be closed out.")
 )
@@ -326,6 +324,9 @@ func (c *client) placeBuyOrder() {
 
 // closeOutTrading closes out all trading for the day.
 func (c *client) closeOutTrading() {
+	if *runBacktest {
+		c.fakeCloseOutTrading()
+	}
 	if err := c.alpacaClient.CancelAllOrders(); err != nil {
 		log.Printf("unable to cancel all orders: %v\n", err)
 	}

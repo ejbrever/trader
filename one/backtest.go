@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/csv"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"math/rand"
@@ -13,8 +15,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+var (
+	backtestFile                  = flag.String("backtest_file", "", "The filename with ticker data to use for backtesting.")
+	backtestFileTimeBetweenAction = flag.Duration("backtest_file_duration_between_action", 60*time.Second, "The time granularity in the backtest file.")
+	backtestStartTime             = flag.String("backtest_starttime", "", "The start time of the backtest in EST (format: 2006-01-02 15:04:00).")
+	runBacktest                   = flag.Bool("run_backtest", false, "Run a backtest simulation.")
+)
+
 // historyReferenceTime is a string of the datetime layout in the historical files.
-const historyReferenceTime = "2006-01-02 15:04:05"
+const referenceTime = "2006-01-02 15:04:05"
 
 var (
 	fakePurchases   = []*purchase.Purchase{}
@@ -50,23 +59,23 @@ func backtest() {
 	fakePurchases = c.purchases
 	log.Printf("backtest is beginning!")
 
-	// TODO(ejbrever) Get start time from backtesting data instead.
-	t := time.Now()
-	t.Add(-1 * *durationBetweenAction) // Subtract one iteration to counteract first increase.
+	t, err := newFakeClock(*durationBetweenAction)
+	if err != nil {
+		log.Printf(err.Error())
+		return
+	}
 
 	for {
-		t.Add(*durationBetweenAction)
-		// Need to account for days where market closes early.
-		clock := getFakeClock()
+		t.updateFakeClock()
 		c.updateOrders()
 		switch {
-		case clock.NextClose.Sub(t) < *timeBeforeMarketCloseToSell:
+		case t.NextClose.Sub(t.Now) < *timeBeforeMarketCloseToSell:
 			log.Printf("market is closing soon")
 			trading = false
 			c.closeOutTrading()
 			time.Sleep(*timeBeforeMarketCloseToSell)
 			continue
-		case !clock.IsOpen:
+		case !t.IsOpen:
 			trading = false
 			log.Printf("market is not open :(")
 			continue
@@ -74,11 +83,13 @@ func backtest() {
 			trading = true
 			log.Printf("market is open!")
 		}
-		go c.run(t)
+		go c.run(t.Now)
 	}
 }
 
 type history struct {
+	// epochToTickerData is a map of epoch timestamps to the corresponding
+	// historical ticker data.
 	epochToTickerData map[int64]*historicalTickerData
 }
 
@@ -108,29 +119,60 @@ func historicalData() (*history, error) {
 	}
 
 	h := newHistory()
-	for _, r := range records {
-		// Historical data files are in EST timezone.
-		t, err := time.ParseInLocation(historyReferenceTime, r[0], EST)
-		if err != nil {
-			return nil, fmt.Errorf("unable to read in time %q: %v", r[0], err)
+	c, err := newFakeClock(*backtestFileTimeBetweenAction)
+	if err != nil {
+		return nil, err
+	}
+
+	i := 0
+	infiniteLoopProtection := 0
+	var lastValidTimeStamp int64
+	for i < len(records) {
+		infiniteLoopProtection++
+		if infiniteLoopProtection > 117000 { // 390 mins/day * 300 days per year
+			return nil, errors.New("infinite loop protection")
 		}
-		// need to filter to only market open times.
-		high, err := decimal.NewFromString(r[2])
-		if err != nil {
-			return nil, fmt.Errorf("unable to convert %q to float: %v", r[2], err)
+		c.updateFakeClock()
+		if c.IsOpen {
+			continue
 		}
-		low, err := decimal.NewFromString(r[3])
-		if err != nil {
-			return nil, fmt.Errorf("unable to convert %q to float: %v", r[3], err)
-		}
-		close, err := decimal.NewFromString(r[4])
-		if err != nil {
-			return nil, fmt.Errorf("unable to convert %q to float: %v", r[4], err)
-		}
-		h.epochToTickerData[t.Unix()] = &historicalTickerData{
-			High:  high,
-			Low:   low,
-			Close: close,
+		for j := i; j < len(records); j++ {
+			r := records[j]
+
+			// Historical data files are in EST timezone.
+			t, err := time.ParseInLocation(referenceTime, r[0], EST)
+			if err != nil {
+				return nil, fmt.Errorf("unable to read in time %q: %v", r[0], err)
+			}
+			if c.Now.Before(t) {
+				h.epochToTickerData[c.Now.Unix()] = h.epochToTickerData[lastValidTimeStamp]
+				break
+			}
+			if !c.Now.Equal(t) {
+				return nil, fmt.Errorf("something went wrong, now: %v, test date: %v", c.Now, t)
+			}
+
+			// need to filter to only market open times.
+			high, err := decimal.NewFromString(r[2])
+			if err != nil {
+				return nil, fmt.Errorf("unable to convert %q to float: %v", r[2], err)
+			}
+			low, err := decimal.NewFromString(r[3])
+			if err != nil {
+				return nil, fmt.Errorf("unable to convert %q to float: %v", r[3], err)
+			}
+			close, err := decimal.NewFromString(r[4])
+			if err != nil {
+				return nil, fmt.Errorf("unable to convert %q to float: %v", r[4], err)
+			}
+			h.epochToTickerData[t.Unix()] = &historicalTickerData{
+				High:  high,
+				Low:   low,
+				Close: close,
+			}
+			lastValidTimeStamp = t.Unix()
+			i++
+			break
 		}
 	}
 	log.Printf("finished reading historical data, had %v rows", len(h.epochToTickerData))
@@ -143,12 +185,45 @@ func randomBool() bool {
 }
 
 type fakeClock struct {
-	NextClose time.Time
-	IsOpen    bool
+	Now               time.Time
+	NextClose         time.Time
+	TodaysOpenTime    time.Time
+	TodaysCloseTime   time.Time
+	IsOpen            bool
+	TimeBetweenAction time.Duration
 }
 
-func getFakeClock() *fakeClock {
-	return &fakeClock{}
+func newFakeClock(timeBetweenAction time.Duration) (*fakeClock, error) {
+	t, err := time.ParseInLocation(referenceTime, *backtestStartTime, EST)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read in start time %q: %v", *backtestStartTime, err)
+	}
+
+	return &fakeClock{
+		Now:               t.Add(-1 * timeBetweenAction), // Subtract one iteration to counteract first increase.
+		TimeBetweenAction: timeBetweenAction,
+		TodaysOpenTime:    time.Date(t.Year(), t.Month(), t.Day(), 9, 30, 0, 0, EST),
+		TodaysCloseTime:   time.Date(t.Year(), t.Month(), t.Day(), 4, 0, 0, 0, EST),
+	}, nil
+}
+
+// updateFakeClock increments the current time, determines if the market is
+// open, and updates the days open market hours if needed.
+// TODO(ejbrever) Account for days where market closes early.
+func (c *fakeClock) updateFakeClock() {
+	c.Now = c.Now.Add(c.TimeBetweenAction)
+	switch {
+	case c.Now.Weekday() == 0: // Sunday.
+	case c.Now.Weekday() == 6: // Saturday.
+	case c.Now.After(c.TodaysOpenTime) && c.Now.Before(c.TodaysCloseTime):
+		c.IsOpen = true
+	default:
+		c.IsOpen = false
+		if c.Now.Hour() == 1 && c.Now.Minute() == 0 && c.Now.Second() == 0 {
+			c.TodaysOpenTime = time.Date(c.Now.Year(), c.Now.Month(), c.Now.Day(), 9, 30, 0, 0, EST)
+			c.TodaysCloseTime = time.Date(c.Now.Year(), c.Now.Month(), c.Now.Day(), 4, 0, 0, 0, EST)
+		}
+	}
 }
 
 // fakeOrder is a func which is used for mocking the order() func during backtesting.
@@ -226,4 +301,8 @@ func (c *client) fakeGetAccount() *alpaca.Account {
 func (c *client) fakeGetSymbolBars() []alpaca.Bar {
 	// Get the last three historical 1 min bars.
 	return nil
+}
+
+func (c *client) fakeCloseOutTrading() {
+	// TODO(ejbrever) close out all trades for day.
 }
