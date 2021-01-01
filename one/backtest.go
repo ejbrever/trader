@@ -35,7 +35,6 @@ const (
 
 var (
 	fakePrice    = &fakeStockPrice{}
-	fakeOrderID  = 0
 	fakeCash     = decimal.NewFromFloat(100000)
 	stockHeldQty = decimal.NewFromFloat(0)
 )
@@ -104,7 +103,7 @@ func (c *client) endOfDayReport() {
 	// TODO(ejbrever) Add change percentage for day trading.
 	// TODO(ejbrever) Add change percentage for day for symbol.
 	fmt.Printf("Time: %v\n", c.backtestClock.Now)
-	fmt.Printf("Orders created: %v\n", fakeOrderID)
+	fmt.Printf("Orders created: %v\n", c.backtestOrderID)
 	fmt.Printf("Cash: %v\n\n", fakeCash.StringFixed(2))
 }
 
@@ -221,8 +220,7 @@ func historicalData() (*history, error) {
 // should be filled.
 // This should return true 75% of the time.
 func randomFillOrder() bool {
-	return true
-	// return rand.Intn(99) >= 24
+	return rand.Intn(99) >= 24
 }
 
 type fakeClock struct {
@@ -343,11 +341,11 @@ func (c *client) fakeBuyAttempt(o *alpaca.Order) {
 }
 
 func (c *client) fakePlaceBuyOrder(req *alpaca.PlaceOrderRequest) {
-	fakeOrderID++
+	c.backtestOrderID++
 	c.purchases = append(c.purchases, &purchase.Purchase{
 		BuyOrder: &alpaca.Order{
 			CreatedAt: c.backtestClock.Now,
-			ID:        fmt.Sprint(fakeOrderID),
+			ID:        fmt.Sprint(c.backtestOrderID),
 			Status:    "new",
 			Qty:       decimal.NewFromFloat(*purchaseQty),
 			Side:      alpaca.Buy,
@@ -357,9 +355,9 @@ func (c *client) fakePlaceBuyOrder(req *alpaca.PlaceOrderRequest) {
 }
 
 func (c *client) fakePlaceSellOrder(p *purchase.Purchase, req *alpaca.PlaceOrderRequest) {
-	fakeOrderID++
+	c.backtestOrderID++
 	p.SellOrder = &alpaca.Order{
-		ID:         fmt.Sprint(fakeOrderID),
+		ID:         fmt.Sprint(c.backtestOrderID),
 		Status:     "new",
 		LimitPrice: req.TakeProfit.LimitPrice,
 		Qty:        decimal.NewFromFloat(*purchaseQty),
@@ -406,7 +404,7 @@ func (c *client) fakeCloseOutTrading() {
 
 	// Zero out stock held and fake purchases.
 	stockHeldQty = decimal.NewFromFloat(0)
-	fakeOrderID = 0
+	c.backtestOrderID = 0
 	c.purchases = []*purchase.Purchase{}
 }
 

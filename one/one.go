@@ -46,6 +46,7 @@ type client struct {
 	stockSymbol         string
 	backtestHistory     *history
 	backtestClock       *fakeClock
+	backtestOrderID     int
 }
 
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
