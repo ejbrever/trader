@@ -18,79 +18,111 @@ import (
 var (
 	backtestFile                  = flag.String("backtest_file", "", "The filename with ticker data to use for backtesting.")
 	backtestFileTimeBetweenAction = flag.Duration("backtest_file_duration_between_action", 60*time.Second, "The time granularity in the backtest file.")
+	backTestMinsToLookBack        = flag.Int("backtest_mins_to_look_back", 3, "The number of minutes to look back when doing historical analysis.")
 	backtestStartTime             = flag.String("backtest_starttime", "", "The start time of the backtest in EST (format: 2006-01-02 15:04:00).")
 	runBacktest                   = flag.Bool("run_backtest", false, "Run a backtest simulation.")
 )
 
-// historyReferenceTime is a string of the datetime layout in the historical files.
-const referenceTime = "2006-01-02 15:04:05"
+const (
+	// historyReferenceTime is a string of the datetime layout in the historical files.
+	referenceTime = "2006-01-02 15:04:05"
+
+	// filled is the order of the status filled.
+	filled = "filled"
+)
 
 var (
-	fakePurchases   = []*purchase.Purchase{}
-	fakePrice       = &fakeStockPrice{}
-	fakeBuyOrderID  = 0
-	fakeSellOrderID = 0
-	fakeCash        = decimal.NewFromFloat(100000)
-	stockHeldQty    = decimal.NewFromFloat(0)
+	fakePrice    = &fakeStockPrice{}
+	fakeOrderID  = 0
+	fakeCash     = decimal.NewFromFloat(100000)
+	stockHeldQty = decimal.NewFromFloat(0)
 )
 
 type fakeStockPrice struct {
 	badPrice decimal.Decimal
 }
 
-func backtest() {
-	// Seed rand.
-	rand.Seed(time.Now().UnixNano())
-
-	_, err := historicalData()
+// newFake creates is a new() func for backtesting.
+func newFake() (*client, error) {
+	h, err := historicalData()
 	if err != nil {
-		log.Printf("unable to read history: %v", err)
-		return
+		return nil, fmt.Errorf("unable to read history: %v", err)
 	}
-	if true {
-		return
+
+	t, err := newFakeClock(*durationBetweenAction)
+	if err != nil {
+		return nil, err
 	}
 
 	c, err := new(*stockSymbol, *maxConcurrentPurchases)
 	if err != nil {
-		log.Printf("unable to start backtesting trader-one: %v", err)
-		return
+		return nil, fmt.Errorf("unable to start backtesting trader-one: %v", err)
 	}
-	fakePurchases = c.purchases
-	log.Printf("backtest is beginning!")
 
-	t, err := newFakeClock(*durationBetweenAction)
+	c.backtestHistory = h
+	c.backtestClock = t
+
+	return c, nil
+}
+
+func backtest() {
+	// Seed rand.
+	rand.Seed(time.Now().UnixNano())
+
+	c, err := newFake()
 	if err != nil {
 		log.Printf(err.Error())
 		return
 	}
+	log.Printf("backtest is beginning!")
 
-	for {
-		t.updateFakeClock()
+	fmt.Printf("starting cash: %v\n", fakeCash.StringFixed(2))
+	for c.backtestHistory.endTime.After(c.backtestClock.Now) {
+		c.backtestClock.updateFakeClock()
 		c.updateOrders()
+		timeUntilMarketClose := c.backtestClock.TodaysCloseTime.Sub(c.backtestClock.Now)
 		switch {
-		case t.NextClose.Sub(t.Now) < *timeBeforeMarketCloseToSell:
-			log.Printf("market is closing soon")
-			trading = false
+		case timeUntilMarketClose > 0*time.Second && timeUntilMarketClose < *timeBeforeMarketCloseToSell:
+			// log.Printf("market is closing soon")
 			c.closeOutTrading()
-			time.Sleep(*timeBeforeMarketCloseToSell)
+			c.backtestClock.Now = c.backtestClock.Now.Add(*timeBeforeMarketCloseToSell)
 			continue
-		case !t.IsOpen:
-			trading = false
-			log.Printf("market is not open :(")
+		case !c.backtestClock.IsOpen:
+			// log.Printf("market is not open :(")
 			continue
 		default:
-			trading = true
-			log.Printf("market is open!")
+			// log.Printf("market is open!")
 		}
-		go c.run(t.Now)
+		c.run(c.backtestClock.Now)
 	}
+	fmt.Printf("ending cash: %v\n", fakeCash.StringFixed(2))
+}
+
+func (c *client) endOfDayReport() {
+	// TODO(ejbrever) Add change percentage for day trading.
+	// TODO(ejbrever) Add change percentage for day for symbol.
+	fmt.Printf("Time: %v\n", c.backtestClock.Now)
+	fmt.Printf("Orders created: %v\n", fakeOrderID)
+	fmt.Printf("Cash: %v\n\n", fakeCash.StringFixed(2))
+}
+
+// fakeCurrentPrice gets the historical ticker data for the current fake time.
+func (c *client) fakeCurrentPrice() *historicalTickerData {
+	t := timeToMinuteStart(c.backtestClock.Now)
+	h, ok := c.backtestHistory.epochToTickerData[t.Unix()]
+	if !ok {
+		panic(fmt.Sprintf("unable to get historical data at %v", t))
+	}
+	return h
 }
 
 type history struct {
 	// epochToTickerData is a map of epoch timestamps to the corresponding
 	// historical ticker data.
 	epochToTickerData map[int64]*historicalTickerData
+
+	// endTime is the last time stored in the history.
+	endTime time.Time
 }
 
 func newHistory() *history {
@@ -127,29 +159,32 @@ func historicalData() (*history, error) {
 	i := 0
 	infiniteLoopProtection := 0
 	var lastValidTimeStamp int64
+	var t time.Time
 	for i < len(records) {
 		infiniteLoopProtection++
 		if infiniteLoopProtection > 117000 { // 390 mins/day * 300 days per year
 			return nil, errors.New("infinite loop protection")
 		}
 		c.updateFakeClock()
-		if c.IsOpen {
+		if !c.IsOpen {
 			continue
 		}
 		for j := i; j < len(records); j++ {
 			r := records[j]
 
 			// Historical data files are in EST timezone.
-			t, err := time.ParseInLocation(referenceTime, r[0], EST)
+			t, err = time.ParseInLocation(referenceTime, r[0], EST)
 			if err != nil {
 				return nil, fmt.Errorf("unable to read in time %q: %v", r[0], err)
 			}
+			if c.Now.After(t) {
+				i++
+				continue
+			}
 			if c.Now.Before(t) {
 				h.epochToTickerData[c.Now.Unix()] = h.epochToTickerData[lastValidTimeStamp]
+				i++
 				break
-			}
-			if !c.Now.Equal(t) {
-				return nil, fmt.Errorf("something went wrong, now: %v, test date: %v", c.Now, t)
 			}
 
 			// need to filter to only market open times.
@@ -175,18 +210,21 @@ func historicalData() (*history, error) {
 			break
 		}
 	}
+	h.endTime = c.Now
 	log.Printf("finished reading historical data, had %v rows", len(h.epochToTickerData))
 	return h, nil
 }
 
-// randomBool returns true or false randomly.
-func randomBool() bool {
-	return rand.Float32() < 0.5
+// randomFillOrder returns true or false randomly to inidicate if an order
+// should be filled.
+// This should return true 75% of the time.
+func randomFillOrder() bool {
+	return true
+	// return rand.Intn(99) >= 24
 }
 
 type fakeClock struct {
 	Now               time.Time
-	NextClose         time.Time
 	TodaysOpenTime    time.Time
 	TodaysCloseTime   time.Time
 	IsOpen            bool
@@ -203,7 +241,7 @@ func newFakeClock(timeBetweenAction time.Duration) (*fakeClock, error) {
 		Now:               t.Add(-1 * timeBetweenAction), // Subtract one iteration to counteract first increase.
 		TimeBetweenAction: timeBetweenAction,
 		TodaysOpenTime:    time.Date(t.Year(), t.Month(), t.Day(), 9, 30, 0, 0, EST),
-		TodaysCloseTime:   time.Date(t.Year(), t.Month(), t.Day(), 4, 0, 0, 0, EST),
+		TodaysCloseTime:   time.Date(t.Year(), t.Month(), t.Day(), 16, 0, 0, 0, EST),
 	}, nil
 }
 
@@ -212,75 +250,114 @@ func newFakeClock(timeBetweenAction time.Duration) (*fakeClock, error) {
 // TODO(ejbrever) Account for days where market closes early.
 func (c *fakeClock) updateFakeClock() {
 	c.Now = c.Now.Add(c.TimeBetweenAction)
+
 	switch {
 	case c.Now.Weekday() == 0: // Sunday.
 	case c.Now.Weekday() == 6: // Saturday.
-	case c.Now.After(c.TodaysOpenTime) && c.Now.Before(c.TodaysCloseTime):
-		c.IsOpen = true
-	default:
+	case c.Now.Before(c.TodaysOpenTime) || c.Now.After(c.TodaysCloseTime):
 		c.IsOpen = false
-		if c.Now.Hour() == 1 && c.Now.Minute() == 0 && c.Now.Second() == 0 {
+		if c.Now.Hour() == 9 && c.Now.Minute() == 29 && c.Now.Second() == 0 {
 			c.TodaysOpenTime = time.Date(c.Now.Year(), c.Now.Month(), c.Now.Day(), 9, 30, 0, 0, EST)
-			c.TodaysCloseTime = time.Date(c.Now.Year(), c.Now.Month(), c.Now.Day(), 4, 0, 0, 0, EST)
+			c.TodaysCloseTime = time.Date(c.Now.Year(), c.Now.Month(), c.Now.Day(), 16, 0, 0, 0, EST)
 		}
+	default:
+		c.IsOpen = true
 	}
 }
 
 // fakeOrder is a func which is used for mocking the order() func during backtesting.
 func (c *client) fakeOrder(id string) *alpaca.Order {
 	var o *alpaca.Order
-	isBuyOrder := false
 	for _, p := range c.purchases {
 		if p.BuyOrder.ID == id {
 			o = p.BuyOrder
-			isBuyOrder = true
 			break
 		}
-		if p.SellOrder.ID == id {
+		if p.SellOrder != nil && p.SellOrder.ID == id {
 			o = p.SellOrder
 			break
 		}
 	}
-	if o.Status == "new" {
-		if randomBool() {
-			o.Status = "filled"
-			o.FilledQty = o.Qty
-			// Use historical price data here. Also need logic to determine to take
-			// limit or stop price (might also be random element to this value).
-			filledAvgPrice := decimal.NewFromFloat(0)
-			o.FilledAvgPrice = &filledAvgPrice
-			totalPrice := o.FilledAvgPrice.Mul(o.Qty)
-			//
-			switch {
-			case isBuyOrder:
-				fakeCash = fakeCash.Sub(totalPrice)
-				stockHeldQty = stockHeldQty.Add(o.Qty)
-			default:
-				fakeCash = fakeCash.Add(totalPrice)
-				stockHeldQty = stockHeldQty.Sub(o.Qty)
-			}
-		}
+
+	if o == nil {
+		panic(fmt.Sprintf("fakeOrder, could not find ID %v", id))
+	}
+
+	if o.Status != "new" {
+		return o
+	}
+
+	switch {
+	case o.Side == alpaca.Sell:
+		c.fakeSellAttempt(o)
+	case o.Side == alpaca.Buy:
+		c.fakeBuyAttempt(o)
+	default:
+		panic(fmt.Sprintf("cannot have an order that is not a buy or sell: %+v", o))
 	}
 	return o
 }
 
+// fakeSellAttempt attempts to fill a sell order.
+func (c *client) fakeSellAttempt(o *alpaca.Order) {
+	if !randomFillOrder() {
+		return
+	}
+
+	p := c.fakeCurrentPrice()
+	legs := *o.Legs
+	switch {
+	case p.Close.GreaterThanOrEqual(*o.LimitPrice):
+		o.Status = filled
+		o.FilledQty = o.Qty
+		o.FilledAvgPrice = &c.fakeCurrentPrice().Low
+
+		fakeCash = fakeCash.Add(o.FilledAvgPrice.Mul(o.Qty))
+		stockHeldQty = stockHeldQty.Sub(o.Qty)
+	case p.Close.LessThanOrEqual(*legs[0].LimitPrice):
+		// No need to do anything as the limit price was surpassed.
+	case p.Close.LessThanOrEqual(*legs[0].StopPrice):
+		o.Status = filled
+		o.FilledQty = o.Qty
+		o.FilledAvgPrice = &c.fakeCurrentPrice().Low
+
+		fakeCash = fakeCash.Add(o.FilledAvgPrice.Mul(o.Qty))
+		stockHeldQty = stockHeldQty.Sub(o.Qty)
+	}
+}
+
+// fakeBuyAttempt attempts to fill a buy order.
+func (c *client) fakeBuyAttempt(o *alpaca.Order) {
+	if !randomFillOrder() {
+		return
+	}
+
+	o.Status = filled
+	o.FilledQty = o.Qty
+	o.FilledAvgPrice = &c.fakeCurrentPrice().High
+
+	fakeCash = fakeCash.Sub(o.FilledAvgPrice.Mul(o.Qty))
+	stockHeldQty = stockHeldQty.Add(o.Qty)
+}
+
 func (c *client) fakePlaceBuyOrder(req *alpaca.PlaceOrderRequest) {
-	fakeBuyOrderID++
+	fakeOrderID++
 	c.purchases = append(c.purchases, &purchase.Purchase{
 		BuyOrder: &alpaca.Order{
-			ID:     fmt.Sprint(fakeBuyOrderID),
-			Status: "new",
-			Qty:    decimal.NewFromFloat(*purchaseQty),
-			Side:   alpaca.Buy,
-			Type:   alpaca.Market,
+			CreatedAt: c.backtestClock.Now,
+			ID:        fmt.Sprint(fakeOrderID),
+			Status:    "new",
+			Qty:       decimal.NewFromFloat(*purchaseQty),
+			Side:      alpaca.Buy,
+			Type:      alpaca.Market,
 		},
 	})
 }
 
 func (c *client) fakePlaceSellOrder(p *purchase.Purchase, req *alpaca.PlaceOrderRequest) {
-	fakeSellOrderID++
+	fakeOrderID++
 	p.SellOrder = &alpaca.Order{
-		ID:         fmt.Sprint(fakeSellOrderID),
+		ID:         fmt.Sprint(fakeOrderID),
 		Status:     "new",
 		LimitPrice: req.TakeProfit.LimitPrice,
 		Qty:        decimal.NewFromFloat(*purchaseQty),
@@ -299,10 +376,49 @@ func (c *client) fakeGetAccount() *alpaca.Account {
 }
 
 func (c *client) fakeGetSymbolBars() []alpaca.Bar {
-	// Get the last three historical 1 min bars.
-	return nil
+	var bars []alpaca.Bar
+	for i := *backTestMinsToLookBack; i > 0; i-- {
+		h, ok := c.backtestHistory.epochToTickerData[timeToMinuteStart(c.backtestClock.Now).Unix()-int64(i*60)]
+		if !ok {
+			return nil
+		}
+		close, _ := h.Close.Float64()
+		bars = append(bars, alpaca.Bar{
+			Close: float32(close),
+		})
+	}
+	return bars
 }
 
 func (c *client) fakeCloseOutTrading() {
-	// TODO(ejbrever) close out all trades for day.
+	nowToMin := timeToMinuteStart(c.backtestClock.Now)
+	h, ok := c.backtestHistory.epochToTickerData[nowToMin.Unix()]
+	if !ok {
+		panic(fmt.Sprintf("could not find data to close out @ %v", nowToMin))
+	}
+	// Sell at the lowest price since this is a market order.
+	// Might need to take off even more to be realistic.
+	fakeCash = fakeCash.Add(h.Low.Mul(stockHeldQty))
+
+	c.endOfDayReport()
+
+	// Zero out stock held and fake purchases.
+	stockHeldQty = decimal.NewFromFloat(0)
+	fakeOrderID = 0
+	c.purchases = []*purchase.Purchase{}
+}
+
+// timeToMinuteStart returns the same time provided with the seconds and ns
+// brought down to 0 which matches the historical data frequency.
+func timeToMinuteStart(t time.Time) time.Time {
+	return time.Date(
+		t.Year(),
+		t.Month(),
+		t.Day(),
+		t.Hour(),
+		t.Minute(),
+		0, // Second reset to 0.
+		0, // Ns reset to 0.
+		t.Location(),
+	)
 }

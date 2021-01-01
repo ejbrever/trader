@@ -44,6 +44,8 @@ type client struct {
 	dbClient            database.Client // This is an interface.
 	purchases           []*purchase.Purchase
 	stockSymbol         string
+	backtestHistory     *history
+	backtestClock       *fakeClock
 }
 
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
@@ -142,6 +144,11 @@ func (c *client) run(t time.Time) {
 // more than 5 mins.
 func (c *client) cancelOutdatedOrders() {
 	now := time.Now()
+	if *runBacktest {
+		now = c.backtestClock.Now
+		// TODO(ejbrever) Implement the cancel order fake.
+		return
+	}
 	for _, o := range c.inProgressBuyOrders() {
 		if now.Sub(o.BuyOrder.CreatedAt) > 5*time.Minute {
 			if err := c.alpacaClient.CancelOrder(o.BuyOrder.ID); err != nil {
@@ -163,6 +170,8 @@ func (c *client) sell() {
 }
 
 func (c *client) placeSellOrder(p *purchase.Purchase) {
+	// TODO(ejbrever) for debugging, remove this.
+	log.Printf("BuyOrder before p.BuyFilledAvgPriceFloat: %+v", p.BuyOrder)
 	basePrice := float64(p.BuyFilledAvgPriceFloat())
 	if basePrice == 0 {
 		log.Printf(
@@ -239,10 +248,10 @@ func (c *client) buyEvent(t time.Time) bool {
 			EndDt:     &endDt,
 			Limit:     &limit,
 		})
-		if err != nil {
-			log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
-			return false
-		}
+	}
+	if err != nil {
+		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
+		return false
 	}
 	if len(bars) < 3 {
 		log.Printf(
@@ -326,6 +335,7 @@ func (c *client) placeBuyOrder() {
 func (c *client) closeOutTrading() {
 	if *runBacktest {
 		c.fakeCloseOutTrading()
+		return
 	}
 	if err := c.alpacaClient.CancelAllOrders(); err != nil {
 		log.Printf("unable to cancel all orders: %v\n", err)
