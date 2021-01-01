@@ -1,3 +1,5 @@
+// Example command line to run:
+// go run . -run_backtest=true -backtest_file=SPY_sample.txt -backtest_starttime="2020-01-02 04:00:00" -max_concurrent_purchases=20 -purchase_quanity=10
 package main
 
 import (
