@@ -44,9 +44,13 @@ type client struct {
 	dbClient            database.Client // This is an interface.
 	purchases           []*purchase.Purchase
 	stockSymbol         string
-	backtestHistory     *history
-	backtestClock       *fakeClock
-	backtestOrderID     int
+
+	// The following struct items are relevant when running backtests.
+	backtestHistory      *history
+	backtestClock        *fakeClock
+	backtestOrderID      int
+	backtestStockHeldQty decimal.Decimal
+	backtestCash         decimal.Decimal
 }
 
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {

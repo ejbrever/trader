@@ -34,9 +34,7 @@ const (
 )
 
 var (
-	fakePrice    = &fakeStockPrice{}
-	fakeCash     = decimal.NewFromFloat(100000)
-	stockHeldQty = decimal.NewFromFloat(0)
+	fakePrice = &fakeStockPrice{}
 )
 
 type fakeStockPrice struct {
@@ -62,6 +60,8 @@ func newFake() (*client, error) {
 
 	c.backtestHistory = h
 	c.backtestClock = t
+	c.backtestCash = decimal.NewFromFloat(100000)
+	c.backtestStockHeldQty = decimal.NewFromFloat(0)
 
 	return c, nil
 }
@@ -77,7 +77,7 @@ func backtest() {
 	}
 	log.Printf("backtest is beginning!")
 
-	fmt.Printf("starting cash: %v\n", fakeCash.StringFixed(2))
+	fmt.Printf("starting cash: %v\n", c.backtestCash.StringFixed(2))
 	for c.backtestHistory.endTime.After(c.backtestClock.Now) {
 		c.backtestClock.updateFakeClock()
 		c.updateOrders()
@@ -96,7 +96,7 @@ func backtest() {
 		}
 		c.run(c.backtestClock.Now)
 	}
-	fmt.Printf("ending cash: %v\n", fakeCash.StringFixed(2))
+	fmt.Printf("ending cash: %v\n", c.backtestCash.StringFixed(2))
 }
 
 func (c *client) endOfDayReport() {
@@ -104,7 +104,7 @@ func (c *client) endOfDayReport() {
 	// TODO(ejbrever) Add change percentage for day for symbol.
 	fmt.Printf("Time: %v\n", c.backtestClock.Now)
 	fmt.Printf("Orders created: %v\n", c.backtestOrderID)
-	fmt.Printf("Cash: %v\n\n", fakeCash.StringFixed(2))
+	fmt.Printf("Cash: %v\n\n", c.backtestCash.StringFixed(2))
 }
 
 // fakeCurrentPrice gets the historical ticker data for the current fake time.
@@ -312,8 +312,8 @@ func (c *client) fakeSellAttempt(o *alpaca.Order) {
 		o.FilledQty = o.Qty
 		o.FilledAvgPrice = &c.fakeCurrentPrice().Low
 
-		fakeCash = fakeCash.Add(o.FilledAvgPrice.Mul(o.Qty))
-		stockHeldQty = stockHeldQty.Sub(o.Qty)
+		c.backtestCash = c.backtestCash.Add(o.FilledAvgPrice.Mul(o.Qty))
+		c.backtestStockHeldQty = c.backtestStockHeldQty.Sub(o.Qty)
 	case p.Close.LessThanOrEqual(*legs[0].LimitPrice):
 		// No need to do anything as the limit price was surpassed.
 	case p.Close.LessThanOrEqual(*legs[0].StopPrice):
@@ -321,8 +321,8 @@ func (c *client) fakeSellAttempt(o *alpaca.Order) {
 		o.FilledQty = o.Qty
 		o.FilledAvgPrice = &c.fakeCurrentPrice().Low
 
-		fakeCash = fakeCash.Add(o.FilledAvgPrice.Mul(o.Qty))
-		stockHeldQty = stockHeldQty.Sub(o.Qty)
+		c.backtestCash = c.backtestCash.Add(o.FilledAvgPrice.Mul(o.Qty))
+		c.backtestStockHeldQty = c.backtestStockHeldQty.Sub(o.Qty)
 	}
 }
 
@@ -336,8 +336,8 @@ func (c *client) fakeBuyAttempt(o *alpaca.Order) {
 	o.FilledQty = o.Qty
 	o.FilledAvgPrice = &c.fakeCurrentPrice().High
 
-	fakeCash = fakeCash.Sub(o.FilledAvgPrice.Mul(o.Qty))
-	stockHeldQty = stockHeldQty.Add(o.Qty)
+	c.backtestCash = c.backtestCash.Sub(o.FilledAvgPrice.Mul(o.Qty))
+	c.backtestStockHeldQty = c.backtestStockHeldQty.Add(o.Qty)
 }
 
 func (c *client) fakePlaceBuyOrder(req *alpaca.PlaceOrderRequest) {
@@ -371,7 +371,7 @@ func (c *client) fakePlaceSellOrder(p *purchase.Purchase, req *alpaca.PlaceOrder
 
 func (c *client) fakeGetAccount() *alpaca.Account {
 	return &alpaca.Account{
-		Cash: fakeCash,
+		Cash: c.backtestCash,
 	}
 }
 
@@ -398,12 +398,12 @@ func (c *client) fakeCloseOutTrading() {
 	}
 	// Sell at the lowest price since this is a market order.
 	// Might need to take off even more to be realistic.
-	fakeCash = fakeCash.Add(h.Low.Mul(stockHeldQty))
+	c.backtestCash = c.backtestCash.Add(h.Low.Mul(c.backtestStockHeldQty))
 
 	c.endOfDayReport()
 
 	// Zero out stock held and fake purchases.
-	stockHeldQty = decimal.NewFromFloat(0)
+	c.backtestStockHeldQty = decimal.NewFromFloat(0)
 	c.backtestOrderID = 0
 	c.purchases = []*purchase.Purchase{}
 }
