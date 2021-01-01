@@ -22,6 +22,7 @@ var (
 	backtestFileTimeBetweenAction = flag.Duration("backtest_file_duration_between_action", 60*time.Second, "The time granularity in the backtest file.")
 	backTestMinsToLookBack        = flag.Int("backtest_mins_to_look_back", 3, "The number of minutes to look back when doing historical analysis.")
 	backtestStartTime             = flag.String("backtest_starttime", "", "The start time of the backtest in EST (format: 2006-01-02 15:04:00).")
+	backtestStartingCash          = flag.Float64("backtest_starting_cash", 100000, "The cash on hand when the backtest starts.")
 	runBacktest                   = flag.Bool("run_backtest", false, "Run a backtest simulation.")
 )
 
@@ -60,7 +61,9 @@ func newFake() (*client, error) {
 
 	c.backtestHistory = h
 	c.backtestClock = t
-	c.backtestCash = decimal.NewFromFloat(100000)
+	c.backtestCashStart = decimal.NewFromFloat(*backtestStartingCash)
+	c.backtestCashStartOfDay = decimal.NewFromFloat(*backtestStartingCash)
+	c.backtestCash = decimal.NewFromFloat(*backtestStartingCash)
 	c.backtestStockHeldQty = decimal.NewFromFloat(0)
 
 	return c, nil
@@ -78,13 +81,18 @@ func backtest() {
 	log.Printf("backtest is beginning!")
 
 	fmt.Printf("starting cash: %v\n", c.backtestCash.StringFixed(2))
-	for c.backtestHistory.endTime.After(c.backtestClock.Now) {
+	trading = false
+	for c.backtestHistory.endTime.After(c.backtestClock.Now) || c.backtestHistory.endTime.Equal(c.backtestClock.Now) {
 		c.backtestClock.updateFakeClock()
 		c.updateOrders()
 		timeUntilMarketClose := c.backtestClock.TodaysCloseTime.Sub(c.backtestClock.Now)
 		switch {
 		case timeUntilMarketClose > 0*time.Second && timeUntilMarketClose < *timeBeforeMarketCloseToSell:
 			// log.Printf("market is closing soon")
+			if trading {
+				c.backtestSymbolEndOfDay = c.fakeCurrentPrice().Close
+				trading = false
+			}
 			c.closeOutTrading()
 			c.backtestClock.Now = c.backtestClock.Now.Add(*timeBeforeMarketCloseToSell)
 			continue
@@ -92,18 +100,31 @@ func backtest() {
 			// log.Printf("market is not open :(")
 			continue
 		default:
+			if !trading {
+				c.backtestSymbolStartOfDay = c.fakeCurrentPrice().Close
+				trading = true
+			}
 			// log.Printf("market is open!")
 		}
 		c.run(c.backtestClock.Now)
 	}
-	fmt.Printf("ending cash: %v\n", c.backtestCash.StringFixed(2))
+
+	profitLoss := profitLossPercent(c.backtestCashStart, c.backtestCash)
+	symbolProfitLoss := profitLossPercent(c.backtestHistory.symbolStartPrice, c.backtestHistory.symbolEndPrice)
+	fmt.Printf("Ending Cash: %v\n", c.backtestCash.StringFixed(2))
+	fmt.Printf("Profit/Loss: %v%%\n", profitLoss.StringFixed(3))
+	fmt.Printf("Symbol Profit/Loss: %v%%\n", symbolProfitLoss.StringFixed(3))
+	fmt.Printf("Algo Benefit: %v%%\n", profitLoss.Sub(symbolProfitLoss).StringFixed(3))
 }
 
 func (c *client) endOfDayReport() {
-	// TODO(ejbrever) Add change percentage for day trading.
-	// TODO(ejbrever) Add change percentage for day for symbol.
+	profitLoss := profitLossPercent(c.backtestCashStartOfDay, c.backtestCash)
+	symbolProfitLoss := profitLossPercent(c.backtestSymbolStartOfDay, c.backtestSymbolEndOfDay)
 	fmt.Printf("Time: %v\n", c.backtestClock.Now)
 	fmt.Printf("Orders created: %v\n", c.backtestOrderID)
+	fmt.Printf("Profit/Loss - Day: %v%%\n", profitLoss.StringFixed(3))
+	fmt.Printf("Symbol Profit/Loss - Day: %v%%\n", symbolProfitLoss.StringFixed(3))
+	fmt.Printf("Algo Benefit - Day: %v%%\n", profitLoss.Sub(symbolProfitLoss).StringFixed(3))
 	fmt.Printf("Cash: %v\n\n", c.backtestCash.StringFixed(2))
 }
 
@@ -124,6 +145,12 @@ type history struct {
 
 	// endTime is the last time stored in the history.
 	endTime time.Time
+
+	// symbolStartPrice is the price of the symbol at the start of the backtest.
+	symbolStartPrice decimal.Decimal
+
+	// symbolEndPrice is the price of the symbol at the end of the backtest.
+	symbolEndPrice decimal.Decimal
 }
 
 func newHistory() *history {
@@ -159,6 +186,7 @@ func historicalData() (*history, error) {
 
 	i := 0
 	infiniteLoopProtection := 0
+	var lastValidTime time.Time
 	var lastValidTimeStamp int64
 	var t time.Time
 	for i < len(records) {
@@ -206,12 +234,18 @@ func historicalData() (*history, error) {
 				Low:   low,
 				Close: close,
 			}
+			if h.symbolStartPrice.IsZero() {
+				h.symbolStartPrice = close
+			}
+			h.symbolEndPrice = close
+			lastValidTime = t
 			lastValidTimeStamp = t.Unix()
 			i++
 			break
 		}
 	}
-	h.endTime = c.Now
+	h.endTime = lastValidTime
+	log.Printf("h.endTime: %v", h.endTime)
 	log.Printf("finished reading historical data, had %v rows", len(h.epochToTickerData))
 	return h, nil
 }
@@ -406,6 +440,7 @@ func (c *client) fakeCloseOutTrading() {
 	c.backtestStockHeldQty = decimal.NewFromFloat(0)
 	c.backtestOrderID = 0
 	c.purchases = []*purchase.Purchase{}
+	c.backtestCashStartOfDay = c.backtestCash
 }
 
 // timeToMinuteStart returns the same time provided with the seconds and ns
@@ -421,4 +456,9 @@ func timeToMinuteStart(t time.Time) time.Time {
 		0, // Ns reset to 0.
 		t.Location(),
 	)
+}
+
+// profitLossPercent returns the profit/loss percentage given start and end values.
+func profitLossPercent(start decimal.Decimal, end decimal.Decimal) decimal.Decimal {
+	return end.Sub(start).Div(start).Mul(decimal.NewFromFloat(100))
 }

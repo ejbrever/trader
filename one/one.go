@@ -46,11 +46,15 @@ type client struct {
 	stockSymbol         string
 
 	// The following struct items are relevant when running backtests.
-	backtestHistory      *history
-	backtestClock        *fakeClock
-	backtestOrderID      int
-	backtestStockHeldQty decimal.Decimal
-	backtestCash         decimal.Decimal
+	backtestHistory          *history
+	backtestClock            *fakeClock
+	backtestOrderID          int
+	backtestStockHeldQty     decimal.Decimal
+	backtestCash             decimal.Decimal
+	backtestCashStart        decimal.Decimal
+	backtestCashStartOfDay   decimal.Decimal
+	backtestSymbolEndOfDay   decimal.Decimal
+	backtestSymbolStartOfDay decimal.Decimal
 }
 
 func new(stockSymbol string, concurrentPurchases int) (*client, error) {
