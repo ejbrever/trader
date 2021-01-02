@@ -84,11 +84,11 @@ func backtest() {
 	trading = false
 	for c.backtestHistory.endTime.After(c.backtestClock.Now) || c.backtestHistory.endTime.Equal(c.backtestClock.Now) {
 		c.backtestClock.updateFakeClock()
-		c.updateOrders()
 		timeUntilMarketClose := c.backtestClock.TodaysCloseTime.Sub(c.backtestClock.Now)
 		switch {
 		case timeUntilMarketClose > 0*time.Second && timeUntilMarketClose < *timeBeforeMarketCloseToSell:
 			// log.Printf("market is closing soon")
+			c.updateOrders()
 			if trading {
 				c.backtestSymbolEndOfDay = c.fakeCurrentPrice().Close
 				trading = false
@@ -104,14 +104,16 @@ func backtest() {
 				c.backtestSymbolStartOfDay = c.fakeCurrentPrice().Close
 				trading = true
 			}
+			c.updateOrders()
 			// log.Printf("market is open!")
+			c.run(c.backtestClock.Now)
 		}
-		c.run(c.backtestClock.Now)
 	}
 
 	profitLoss := profitLossPercent(c.backtestCashStart, c.backtestCash)
 	symbolProfitLoss := profitLossPercent(c.backtestHistory.symbolStartPrice, c.backtestHistory.symbolEndPrice)
 	fmt.Printf("Ending Cash: %v\n", c.backtestCash.StringFixed(2))
+	fmt.Printf("Ending Held Shares: %v\n", c.backtestStockHeldQty.String())
 	fmt.Printf("Profit/Loss: %v%%\n", profitLoss.StringFixed(3))
 	fmt.Printf("Symbol Profit/Loss: %v%%\n", symbolProfitLoss.StringFixed(3))
 	fmt.Printf("Algo Benefit: %v%%\n", profitLoss.Sub(symbolProfitLoss).StringFixed(3))
@@ -305,12 +307,15 @@ func (c *fakeClock) updateFakeClock() {
 // fakeOrder is a func which is used for mocking the order() func during backtesting.
 func (c *client) fakeOrder(id string) *alpaca.Order {
 	var o *alpaca.Order
+	var foundPurchase *purchase.Purchase
 	for _, p := range c.purchases {
 		if p.BuyOrder.ID == id {
+			foundPurchase = p
 			o = p.BuyOrder
 			break
 		}
 		if p.SellOrder != nil && p.SellOrder.ID == id {
+			foundPurchase = p
 			o = p.SellOrder
 			break
 		}
@@ -327,12 +332,15 @@ func (c *client) fakeOrder(id string) *alpaca.Order {
 	switch {
 	case o.Side == alpaca.Sell:
 		c.fakeSellAttempt(o)
+		if foundPurchase.SellOrder.Status == filled {
+			log.Printf("sold profit/loss: %v", foundPurchase.SellOrder.FilledAvgPrice.Sub(*foundPurchase.BuyOrder.FilledAvgPrice).StringFixed(2))
+		}
 	case o.Side == alpaca.Buy:
 		c.fakeBuyAttempt(o)
 	default:
 		panic(fmt.Sprintf("cannot have an order that is not a buy or sell: %+v", o))
 	}
-	return o
+	return nil
 }
 
 // fakeSellAttempt attempts to fill a sell order.
