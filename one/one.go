@@ -25,7 +25,9 @@ var (
 	purchaseQty                 = flag.Float64("purchase_quanity", 0, "Quantity of shares to purchase with each buy order.")
 	stockSymbol                 = flag.String("stock_symbol", "", "The stock to buy an sell.")
 	timeBeforeMarketCloseToSell = flag.Duration("time_before_market_close_to_sell", 1*time.Hour, "The time before market close that all positions should be closed out.")
-	numSequentialIncreasesToBuy = flag.Int("num_sequential_increases_to_buy", 3, "The number of sequentials price increases to initiate a buy event.")
+	numHistoricalBarsToUse      = flag.Int("num_historical_bars_to_use", 3, "The number of historical bars to request when determining if now is a buy event.")
+	allSequentialIncreasesToBuy = flag.Bool("all_sequential_increases_to_buy", false, "If true, all historical bars must increase sequentially to initiate a buy event.")
+	minSlopeRequiredToBuy       = flag.Float64("min_slope_required_to_buy", 1.3, "The minumun slope of the trend line required to initiate a buy event.")
 )
 
 var (
@@ -243,9 +245,9 @@ func (c *client) buy(t time.Time) {
 
 // buyEvent determines if this time is a buy event.
 func (c *client) buyEvent(t time.Time) bool {
-	limit := *numSequentialIncreasesToBuy
+	limit := *numHistoricalBarsToUse
 	endDt := time.Now()
-	startDt := endDt.Add(time.Duration(-1**numSequentialIncreasesToBuy) * time.Minute)
+	startDt := endDt.Add(time.Duration(-1**numHistoricalBarsToUse) * time.Minute)
 	var bars []alpaca.Bar
 	var err error
 	switch {
@@ -263,10 +265,10 @@ func (c *client) buyEvent(t time.Time) bool {
 		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
 		return false
 	}
-	if len(bars) < *numSequentialIncreasesToBuy {
+	if len(bars) < *numHistoricalBarsToUse {
 		log.Printf(
 			"did not return at least %v bars, so cannot proceed @ %v\ngot: %+v",
-			*numSequentialIncreasesToBuy,
+			*numHistoricalBarsToUse,
 			t,
 			bars,
 		)
@@ -291,7 +293,12 @@ func (c *client) buyEvent(t time.Time) bool {
 		return false
 	}
 
-	if !c.allPositiveImprovements(bars) {
+	if !c.barsImprovementSlope(bars) {
+		log.Printf("slope did not meet requirements")
+		return false
+	}
+
+	if *allSequentialIncreasesToBuy && !c.allPositiveImprovements(bars) {
 		log.Printf("non-positive improvements")
 		return false
 	}
@@ -309,6 +316,29 @@ func (c *client) allPositiveImprovements(bars []alpaca.Bar) bool {
 		}
 	}
 	return true
+}
+
+// barsImprovementSlope returns true if the slope of the bars, using least
+// squares regression, is greater than a specified value.
+func (c *client) barsImprovementSlope(bars []alpaca.Bar) bool {
+	if bars[len(bars)-1].Close < bars[0].Close {
+		// Do a quick check to avoid more expensive math.
+		return false
+	}
+
+	var sumX, sumY, sumX2, sumXY float64
+	for xInt, bar := range bars {
+		x := float64(xInt)
+		y := float64(bar.Close)
+		sumX += x
+		sumY += y
+		sumX2 += x * x
+		sumXY += x * y
+	}
+	n := float64(len(bars))
+	m := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
+	log.Printf("slope: %.2f", m)
+	return m >= *minSlopeRequiredToBuy
 }
 
 func (c *client) placeBuyOrder() {

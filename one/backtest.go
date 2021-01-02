@@ -414,7 +414,7 @@ func (c *client) fakeGetAccount() *alpaca.Account {
 
 func (c *client) fakeGetSymbolBars() []alpaca.Bar {
 	var bars []alpaca.Bar
-	for i := *numSequentialIncreasesToBuy; i > 0; i-- {
+	for i := *numHistoricalBarsToUse; i > 0; i-- {
 		h, ok := c.backtestHistory.epochToTickerData[timeToMinuteStart(c.backtestClock.Now).Unix()-int64(i*60)]
 		if !ok {
 			return nil
