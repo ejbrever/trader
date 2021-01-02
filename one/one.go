@@ -25,6 +25,7 @@ var (
 	purchaseQty                 = flag.Float64("purchase_quanity", 0, "Quantity of shares to purchase with each buy order.")
 	stockSymbol                 = flag.String("stock_symbol", "", "The stock to buy an sell.")
 	timeBeforeMarketCloseToSell = flag.Duration("time_before_market_close_to_sell", 1*time.Hour, "The time before market close that all positions should be closed out.")
+	numSequentialIncreasesToBuy = flag.Int("num_sequential_increases_to_buy", 3, "The number of sequentials price increases to initiate a buy event.")
 )
 
 var (
@@ -242,9 +243,9 @@ func (c *client) buy(t time.Time) {
 
 // buyEvent determines if this time is a buy event.
 func (c *client) buyEvent(t time.Time) bool {
-	limit := 3
+	limit := *numSequentialIncreasesToBuy
 	endDt := time.Now()
-	startDt := endDt.Add(-5 * time.Minute)
+	startDt := endDt.Add(time.Duration(-1**numSequentialIncreasesToBuy) * time.Minute)
 	var bars []alpaca.Bar
 	var err error
 	switch {
@@ -262,10 +263,13 @@ func (c *client) buyEvent(t time.Time) bool {
 		log.Printf("GetSymbolBars err @ %v: %v\n", t, err)
 		return false
 	}
-	if len(bars) < 3 {
+	if len(bars) < *numSequentialIncreasesToBuy {
 		log.Printf(
-			"did not return at least three bars, so cannot proceed @ %v\ngot: %+v",
-			t, bars)
+			"did not return at least %v bars, so cannot proceed @ %v\ngot: %+v",
+			*numSequentialIncreasesToBuy,
+			t,
+			bars,
+		)
 		return false
 	}
 	var a *alpaca.Account

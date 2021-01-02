@@ -20,9 +20,9 @@ import (
 var (
 	backtestFile                  = flag.String("backtest_file", "", "The filename with ticker data to use for backtesting.")
 	backtestFileTimeBetweenAction = flag.Duration("backtest_file_duration_between_action", 60*time.Second, "The time granularity in the backtest file.")
-	backTestMinsToLookBack        = flag.Int("backtest_mins_to_look_back", 3, "The number of minutes to look back when doing historical analysis.")
 	backtestStartTime             = flag.String("backtest_starttime", "", "The start time of the backtest in EST (format: 2006-01-02 15:04:00).")
 	backtestStartingCash          = flag.Float64("backtest_starting_cash", 100000, "The cash on hand when the backtest starts.")
+	backtestPrintDayDetails       = flag.Bool("backtest_print_day_details", false, "When true, print the details for each day.")
 	runBacktest                   = flag.Bool("run_backtest", false, "Run a backtest simulation.")
 )
 
@@ -118,6 +118,9 @@ func backtest() {
 }
 
 func (c *client) endOfDayReport() {
+	if !*backtestPrintDayDetails {
+		return
+	}
 	profitLoss := profitLossPercent(c.backtestCashStartOfDay, c.backtestCash)
 	symbolProfitLoss := profitLossPercent(c.backtestSymbolStartOfDay, c.backtestSymbolEndOfDay)
 	fmt.Printf("Time: %v\n", c.backtestClock.Now)
@@ -411,7 +414,7 @@ func (c *client) fakeGetAccount() *alpaca.Account {
 
 func (c *client) fakeGetSymbolBars() []alpaca.Bar {
 	var bars []alpaca.Bar
-	for i := *backTestMinsToLookBack; i > 0; i-- {
+	for i := *numSequentialIncreasesToBuy; i > 0; i-- {
 		h, ok := c.backtestHistory.epochToTickerData[timeToMinuteStart(c.backtestClock.Now).Unix()-int64(i*60)]
 		if !ok {
 			return nil
